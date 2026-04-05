@@ -4,9 +4,12 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import shutil
 import os
+import duckdb  # <-- Added missing DuckDB import
 import polars as pl
 import pandas as pd
 import numpy as np
+
+# Ensure execute_natural_query handles the LLM translation in your core_engine!
 from core_engine import process_and_detect, clean_dataset, get_viz_data, generate_insights, execute_natural_query, confirm_and_execute_edit
 
 app = FastAPI(title="DataSentinel Local Backend")
@@ -19,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- PYDANTIC MODELS ---
 class CleanRequest(BaseModel):
     action: str = "drop"
 
@@ -29,12 +33,15 @@ class QueryEditRequest(BaseModel):
 class ConfirmEditRequest(BaseModel):
     sql_query: str
 
+# <-- THE FIX: Added the missing QueryRequest model
+class QueryRequest(BaseModel):
+    prompt: str
+
+
+# --- ROUTES ---
 @app.get("/")
 def read_root():
     return {"message": "Antigravity bare-metal engine is online."}
-
-import shutil
-import os
 
 @app.post("/api/upload")
 async def upload_and_analyze(file: UploadFile = File(...)):
@@ -67,17 +74,6 @@ async def upload_and_analyze(file: UploadFile = File(...)):
             except PermissionError:
                 pass
 
-# --- ADD THIS MISSING ROUTE FOR THE INSIGHTS TAB ---
-@app.get("/api/insights/{session_id}")
-def fetch_insights(session_id: str):
-    try:
-        results = generate_insights(session_id)
-        if "error" in results:
-            raise HTTPException(status_code=400, detail=results["error"])
-        return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/data/{session_id}")
 def get_session_data(session_id: str, is_cleaned: str = "false", only_anomalies: str = "false"):
     file_name = "cleaned_data.parquet" if is_cleaned == "true" else "raw_data.parquet"
@@ -98,7 +94,6 @@ def get_session_data(session_id: str, is_cleaned: str = "false", only_anomalies:
             pandas_df = df.head(1000).to_pandas()
             
         # CRITICAL FIX: Industrial-grade NaN and Infinity sanitization for large datasets
-        # This prevents the backend from crashing during JSON serialization
         pandas_df = pandas_df.replace([np.inf, -np.inf], np.nan)
         pandas_df = pandas_df.astype(object).where(pd.notna(pandas_df), None)
         
@@ -145,13 +140,61 @@ def fetch_insights(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/query/{session_id}")
-def query_data(session_id: str, request: QueryEditRequest):
-    results = execute_natural_query(session_id, request.user_query, request.is_edit)
-    if "error" in results: raise HTTPException(status_code=400, detail=results["error"])
-    return results
+async def query_data(session_id: str, request: QueryRequest):
+    session_dir = f"./sessions/{session_id}"
+    
+    # 1. SMART FILE SELECTION
+    processed_path = f"{session_dir}/processed_data.parquet"
+    raw_path = f"{session_dir}/raw_data.parquet"
+    
+    if os.path.exists(processed_path):
+        target_file = processed_path
+    elif os.path.exists(raw_path):
+        target_file = raw_path
+    else:
+        raise HTTPException(status_code=404, detail="No data found for this session. Please upload a file first.")
+
+    try:
+        # 2. Use your existing NLP to SQL engine from core_engine
+        # Make sure execute_natural_query returns a dict like: {"results": [...], "sql": "SELECT ..."}
+        results = execute_natural_query(session_id, request.prompt)
+        
+        if "error" in results:
+            raise HTTPException(status_code=400, detail=results["error"])
+            
+        return results
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "Threat_Score" in error_msg:
+            error_msg = "Threat_Score not found. Did you forget to click 'Run Detection' first?"
+        raise HTTPException(status_code=400, detail=error_msg)
 
 @app.post("/api/query_edit/confirm/{session_id}")
 def confirm_edit(session_id: str, request: ConfirmEditRequest):
     results = confirm_and_execute_edit(session_id, request.sql_query)
     if "error" in results: raise HTTPException(status_code=400, detail=results["error"])
     return results
+
+@app.get("/api/quarantine/{session_id}")
+def fetch_quarantine_vault(session_id: str):
+    quarantine_path = f"./sessions/{session_id}/quarantined_data.parquet"
+    
+    if not os.path.exists(quarantine_path):
+        return {"data": [], "count": 0}
+        
+    try:
+        # Read the quarantined file
+        df = pl.read_parquet(quarantine_path)
+        
+        # Convert to Pandas for safe JSON serialization, grab the top 100 for the UI
+        pandas_df = df.head(100).to_pandas()
+        pandas_df = pandas_df.replace([np.inf, -np.inf], np.nan)
+        pandas_df = pandas_df.astype(object).where(pd.notna(pandas_df), None)
+        
+        return {
+            "data": pandas_df.to_dict(orient="records"),
+            "count": len(df)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

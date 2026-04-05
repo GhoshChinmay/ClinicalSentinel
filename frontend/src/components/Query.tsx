@@ -43,8 +43,9 @@ export default function Query({ sessionId }: { sessionId: string }) {
         setLoading(true);
 
         try {
+            // FIX 1: Changed 'user_query' to 'prompt' to perfectly match FastAPI's QueryRequest BaseModel
             const res = await axios.post(`http://127.0.0.1:8000/api/query/${sessionId}`, {
-                user_query: newUserMsg.content,
+                prompt: newUserMsg.content,
                 is_edit: mode === 'edit'
             });
 
@@ -55,7 +56,20 @@ export default function Query({ sessionId }: { sessionId: string }) {
                 setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', type: 'explore_result', sql: res.data.sql, columns: res.data.columns, data: res.data.data }]);
             }
         } catch (err: any) {
-            setMessages(prev => [...prev, { id: generateId(), role: 'assistant', type: 'error', content: err.response?.data?.detail || "Failed to process query." }]);
+            // FIX 2: Crash-proof error extraction for FastAPI 422 Object Arrays
+            let errorMsg = "Failed to process query.";
+            const detail = err.response?.data?.detail;
+
+            if (detail) {
+                if (Array.isArray(detail)) {
+                    errorMsg = `Validation Error: ${detail[0].loc[detail[0].loc.length - 1]} - ${detail[0].msg}`;
+                } else if (typeof detail === 'string') {
+                    errorMsg = detail;
+                } else {
+                    errorMsg = JSON.stringify(detail);
+                }
+            }
+            setMessages(prev => [...prev, { id: generateId(), role: 'assistant', type: 'error', content: errorMsg }]);
         } finally {
             setLoading(false);
         }
@@ -73,7 +87,20 @@ export default function Query({ sessionId }: { sessionId: string }) {
                     : msg
             ));
         } catch (err: any) {
-            setMessages(prev => [...prev, { id: generateId(), role: 'assistant', type: 'error', content: err.response?.data?.detail || "Execution failed." }]);
+            // Re-use the crash-proof logic here as well
+            let errorMsg = "Execution failed.";
+            const detail = err.response?.data?.detail;
+
+            if (detail) {
+                if (Array.isArray(detail)) {
+                    errorMsg = `Validation Error: ${detail[0].loc[detail[0].loc.length - 1]} - ${detail[0].msg}`;
+                } else if (typeof detail === 'string') {
+                    errorMsg = detail;
+                } else {
+                    errorMsg = JSON.stringify(detail);
+                }
+            }
+            setMessages(prev => [...prev, { id: generateId(), role: 'assistant', type: 'error', content: errorMsg }]);
         } finally {
             setLoading(false);
         }
@@ -206,7 +233,7 @@ export default function Query({ sessionId }: { sessionId: string }) {
                         </motion.div>
                     ))}
 
-                    {/* FIX: Added key="loading-bubble" to satisfy AnimatePresence */}
+                    {/* Loading Indicator */}
                     {loading && (
                         <motion.div key="loading-bubble" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-start">
                             <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center border border-neutral-700 mr-3 shrink-0">
@@ -220,7 +247,6 @@ export default function Query({ sessionId }: { sessionId: string }) {
                     )}
                 </AnimatePresence>
 
-                {/* FIX: Moved outside AnimatePresence so it doesn't need a key tracked for animation */}
                 <div ref={messagesEndRef} className="h-1" />
             </div>
 

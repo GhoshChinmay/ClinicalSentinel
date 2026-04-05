@@ -2,6 +2,8 @@ import polars as pl
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import TruncatedSVD
 import numpy as np
 import ollama
 import duckdb
@@ -9,6 +11,66 @@ import re
 import os
 import uuid
 import pandas as pd
+
+def process_text_anomalies(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Universally extracts structural math and NLP context from any text columns.
+    """
+    # Identify all string columns dynamically (handles both older and newer Polars string types)
+    string_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype in [pl.Utf8, getattr(pl, 'String', pl.Utf8)]]
+    
+    if not string_cols:
+        return df # No text columns found, skip!
+        
+    print(f"DataSentinel: Auto-detected {len(string_cols)} text columns. Running Universal NLP Bridge...")
+    
+    new_features = []
+    
+    # --- PHASE A: STRUCTURAL SHAPE EXTRACTION ---
+    for col in string_cols:
+        # Fill nulls with empty strings to prevent math crashes
+        df = df.with_columns(pl.col(col).fill_null(""))
+        
+        # Safe length (add 0.0001 to avoid dividing by zero)
+        safe_len = pl.col(col).str.len_chars() + 0.0001
+        
+        new_features.extend([
+            pl.col(col).str.len_chars().alias(f"{col}_length"),
+            (pl.col(col).str.count_matches(r"\d") / safe_len).alias(f"{col}_digit_ratio"),
+            (pl.col(col).str.count_matches(r"[A-Z]") / safe_len).alias(f"{col}_upper_ratio"),
+            (pl.col(col).str.count_matches(r"[^\w\s]") / safe_len).alias(f"{col}_special_ratio")
+        ])
+        
+    df = df.with_columns(new_features)
+
+    # --- PHASE B: TF-IDF + PCA (THE NLP BRIDGE) ---
+    # Combine all text columns into one massive "meta-document" per row
+    df = df.with_columns(
+        pl.concat_str([pl.col(c) for c in string_cols], separator=" ").alias("meta_text")
+    )
+    
+    text_data = df["meta_text"].to_list()
+    
+    # Vectorize the text (limit to top 500 words to save memory)
+    vectorizer = TfidfVectorizer(max_features=500, stop_words='english')
+    try:
+        tfidf_matrix = vectorizer.fit_transform(text_data)
+        
+        # Compress down to max 3 numerical signals
+        n_comps = min(3, tfidf_matrix.shape[1])
+        if n_comps > 0:
+            svd = TruncatedSVD(n_components=n_comps, random_state=42)
+            pca_features = svd.fit_transform(tfidf_matrix)
+            
+            pca_cols = [pl.Series(f"nlp_pc{i+1}", pca_features[:, i]) for i in range(n_comps)]
+            df = df.with_columns(pca_cols)
+    except Exception as e:
+        print(f"DataSentinel NLP Engine Warning: {e}")
+    
+    # Drop the temporary meta column, but KEEP original text columns for the UI
+    df = df.drop("meta_text")
+    
+    return df
 
 def process_and_detect(file_path: str, session_id: str = None, algorithm: str = "isolation_forest"):
     if not session_id:
@@ -18,16 +80,19 @@ def process_and_detect(file_path: str, session_id: str = None, algorithm: str = 
     os.makedirs(session_dir, exist_ok=True)
 
     try:
-        # Attempt 1: Ultra-fast Polars strict read (scans a massive 1 million rows to be safe)
         df = pl.read_csv(file_path, infer_schema_length=1000000)
     except Exception as e:
         try:
-            # Attempt 2: The Bulletproof Pandas Fallback
-            # If Polars chokes on scientific notation, Pandas will force it through
             pandas_fallback = pd.read_csv(file_path, low_memory=False)
             df = pl.from_pandas(pandas_fallback)
         except Exception as inner_e:
             return {"error": f"Fatal Read Error. Both engines failed to parse the CSV: {str(inner_e)}"}
+
+    # --- NEW: DEDUPLICATION ---
+    df = df.unique()
+
+    # --- NEW: UNIVERSAL TEXT ENGINE ---
+    df = process_text_anomalies(df)
 
     pandas_df = df.to_pandas()
     numeric_cols = pandas_df.select_dtypes(include=[np.number]).columns.tolist()
@@ -51,18 +116,15 @@ def process_and_detect(file_path: str, session_id: str = None, algorithm: str = 
     is_anomaly = [True if x == -1 else False for x in predictions]
     df = df.with_columns(pl.Series(name="is_anomaly", values=is_anomaly))
 
-    # --- NEW: TIER 2 SUPERVISED THREAT ENGINE (PRECISION/RECALL) ---
+   # --- TIER 2 THREAT ENGINE (SUPERVISED OR SYNTHETIC) ---
     if "Class" in pandas_df.columns:
         try:
-            # Safely use the encoded_df so the ML model doesn't crash on text columns
             X = encoded_df.drop(columns=["Class"]) if "Class" in encoded_df.columns else encoded_df
             y = pandas_df["Class"].fillna(0)
             
-            # High-speed Gradient Booster balancing the extreme fraud ratio
             classifier = HistGradientBoostingClassifier(class_weight="balanced", random_state=42)
             classifier.fit(X, y)
             
-            # Extract 0-100% Threat Score
             probabilities = classifier.predict_proba(X)[:, 1] 
             threat_scores = [round(p * 100, 2) for p in probabilities]
             df = df.with_columns(pl.Series(name="Threat_Score", values=threat_scores))
@@ -70,14 +132,33 @@ def process_and_detect(file_path: str, session_id: str = None, algorithm: str = 
             print(f"Supervised Engine failed: {e}")
             df = df.with_columns(pl.Series(name="Threat_Score", values=[0] * len(pandas_df)))
     else:
-        # Fallback if it's not the Kaggle Dataset / no target column exists
-        df = df.with_columns(pl.Series(name="Threat_Score", values=[0] * len(pandas_df)))
+        # --- NEW: SYNTHETIC THREAT SCORE FOR UNLABELED DATASETS ---
+        try:
+            if algorithm == "isolation_forest":
+                raw_scores = model.decision_function(encoded_df)
+            else:
+                raw_scores = model.negative_outlier_factor_
+                
+            # Invert scores (so more anomalous = higher number)
+            inverted_scores = -raw_scores
+            min_s = inverted_scores.min()
+            max_s = inverted_scores.max()
+            
+            # Scale the scores from 0 to 100% based on their mathematical severity
+            if max_s > min_s:
+                threat_scores = [round(((s - min_s) / (max_s - min_s)) * 100, 2) for s in inverted_scores]
+            else:
+                threat_scores = [0] * len(pandas_df)
+                
+            df = df.with_columns(pl.Series(name="Threat_Score", values=threat_scores))
+        except Exception as e:
+            print(f"Synthetic Engine failed: {e}")
+            df = df.with_columns(pl.Series(name="Threat_Score", values=[0] * len(pandas_df)))
 
-    # --- THE MASSIVE PERFORMANCE UPGRADE ---
+    # --- AI REASON GENERATOR ---
     reasons_list = [""] * len(pandas_df)
     
     if any(is_anomaly):
-        # 1. PRE-CALCULATE stats ONCE for the whole dataset
         stats = {}
         for col in numeric_cols:
             stats[col] = {
@@ -90,7 +171,6 @@ def process_and_detect(file_path: str, session_id: str = None, algorithm: str = 
             counts = pandas_df[col].value_counts(normalize=True)
             rare_cats[col] = counts[counts < 0.01].index.tolist()
 
-        # 2. Assign reasons instantly
         anomaly_indices = [i for i, x in enumerate(is_anomaly) if x]
         for idx in anomaly_indices:
             row = pandas_df.iloc[idx]
@@ -131,48 +211,118 @@ def process_and_detect(file_path: str, session_id: str = None, algorithm: str = 
 def clean_dataset(session_id: str, action: str = "drop"):
     session_dir = f"./sessions/{session_id}"
     raw_parquet_path = f"{session_dir}/raw_data.parquet"
-    if not os.path.exists(raw_parquet_path): return {"error": "Dataset not found."}
+    
+    if not os.path.exists(raw_parquet_path): 
+        return {"error": "Dataset not found."}
         
     df = pl.read_parquet(raw_parquet_path)
     original_count = len(df)
     
-    if action == "drop":
+    # ---------------------------------------------------------
+    # ACTION 1: THE QUARANTINE (Soft Deletion)
+    # ---------------------------------------------------------
+    if action in ["drop", "quarantine"]:
+        quarantined_df = df.filter(pl.col("is_anomaly") == True)
+        if len(quarantined_df) > 0:
+            quarantined_df.write_parquet(f"{session_dir}/quarantined_data.parquet")
+            
         cleaned_df = df.filter(pl.col("is_anomaly") == False)
-    elif action == "cap":
-        numeric_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]]
-        pandas_df = df.to_pandas()
-        for col in numeric_cols:
-            lower = pandas_df[col].quantile(0.05)
-            upper = pandas_df[col].quantile(0.95)
-            pandas_df.loc[pandas_df['is_anomaly'], col] = pandas_df.loc[pandas_df['is_anomaly'], col].clip(lower, upper)
-        cleaned_df = pl.from_pandas(pandas_df)
 
-    # Clean up markers
-    cols_to_drop = ["is_anomaly", "AI_Reason", "Threat_Score"] + [c for c in cleaned_df.columns if c.endswith("_freq")]
+    # ---------------------------------------------------------
+    # ACTION 2: SMART WINSORIZATION (Capping)
+    # ---------------------------------------------------------
+    elif action == "winsorize":
+        numeric_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]]
+        normal_data = df.filter(pl.col("is_anomaly") == False)
+        
+        exprs = []
+        for col in numeric_cols:
+            if col in ["is_anomaly", "Threat_Score"]: continue 
+            
+            lower_bound = normal_data[col].quantile(0.05)
+            upper_bound = normal_data[col].quantile(0.95)
+            
+            expr = pl.when(pl.col("is_anomaly") == True) \
+                     .then(pl.col(col).clip(lower_bound, upper_bound)) \
+                     .otherwise(pl.col(col)) \
+                     .alias(col)
+            exprs.append(expr)
+            
+        cleaned_df = df.with_columns(exprs)
+
+    # ---------------------------------------------------------
+    # ACTION 3: CATEGORICAL MASKING (The Redaction)
+    # ---------------------------------------------------------
+    elif action == "mask":
+        string_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype in [pl.Utf8, getattr(pl, 'String', pl.Utf8)]]
+        
+        exprs = []
+        for col in string_cols:
+            if col in ["AI_Reason"]: continue
+            
+            # If it's an anomaly, overwrite the text with a safe placeholder
+            expr = pl.when(pl.col("is_anomaly") == True) \
+                     .then(pl.lit("[REDACTED_ANOMALY]")) \
+                     .otherwise(pl.col(col)) \
+                     .alias(col)
+            exprs.append(expr)
+            
+        cleaned_df = df.with_columns(exprs)
+
+    # ---------------------------------------------------------
+    # ACTION 4: CONTEXTUAL IMPUTATION (Smart Replacement)
+    # ---------------------------------------------------------
+    elif action == "impute":
+        numeric_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]]
+        normal_data = df.filter(pl.col("is_anomaly") == False)
+        
+        exprs = []
+        for col in numeric_cols:
+            if col in ["is_anomaly", "Threat_Score"]: continue 
+            
+            # Find the true median of the healthy data to act as the baseline
+            healthy_baseline = normal_data[col].median()
+            
+            # Replace the anomaly with the healthy baseline
+            expr = pl.when(pl.col("is_anomaly") == True) \
+                     .then(pl.lit(healthy_baseline)) \
+                     .otherwise(pl.col(col)) \
+                     .alias(col)
+            exprs.append(expr)
+            
+        cleaned_df = df.with_columns(exprs)
+
+    else:
+        return {"error": f"Unknown cleaning action: {action}"}
+
+    # ---------------------------------------------------------
+    # FINAL CLEANUP & EXPORT
+    # ---------------------------------------------------------
+    cols_to_drop = ["is_anomaly", "AI_Reason", "Threat_Score"] + [c for c in df.columns if c.endswith("_freq")]
     cleaned_df = cleaned_df.drop([c for c in cols_to_drop if c in cleaned_df.columns])
         
     cleaned_parquet_path = f"{session_dir}/cleaned_data.parquet"
     cleaned_df.write_parquet(cleaned_parquet_path)
     
-    return {"status": "success", "new_total": len(cleaned_df)}
-
-# --- REPLACEMENT FOR core_engine.py ---
+    return {
+        "status": "success", 
+        "action_taken": action,
+        "original_rows": original_count,
+        "new_total": len(cleaned_df)
+    }
 
 def get_global_histogram(df, numeric_cols):
     if df is None or len(df) == 0 or not numeric_cols: return []
     
     try:
-        # 1. Stay natively inside Polars (avoids the Pandas NA crash entirely)
         exprs = [
             ((pl.col(c) - pl.col(c).mean()) / (pl.col(c).std() + 1e-9)).alias(c)
             for c in numeric_cols
         ]
         normalized_df = df.select(exprs)
         
-        # 2. Melt into a single column and drop nulls safely
         flat_series = normalized_df.melt().drop_nulls().get_column("value")
         
-        # 3. Convert to a pure numpy array for the final histogram
         flat_values = flat_series.to_numpy()
         hist, bins = np.histogram(flat_values, bins=30, range=(-5, 5))
         
@@ -192,8 +342,6 @@ def get_viz_data(session_id: str):
     df_raw = pl.read_parquet(raw_path)
     df_clean = pl.read_parquet(clean_path) if os.path.exists(clean_path) else None
     
-    # THE FIX: Get numeric columns but EXCLUDE the internal AI columns
-    # This prevents the histogram from looking for columns we deleted during cleaning
     internal_cols = ["is_anomaly", "Threat_Score", "Class"]
     numeric_cols = [
         c for c, d in zip(df_raw.columns, df_raw.dtypes) 
@@ -210,17 +358,23 @@ def get_viz_data(session_id: str):
 def generate_insights(session_id: str):
     session_dir = f"./sessions/{session_id}"
     data_path = f"{session_dir}/cleaned_data.parquet" if os.path.exists(f"{session_dir}/cleaned_data.parquet") else f"{session_dir}/raw_data.parquet"
-    df = pl.read_parquet(data_path)
-    summary = f"Rows: {len(df)}\nCols: {len(df.columns)}\nSchema: " + ", ".join(df.columns)
     
+    if not os.path.exists(data_path):
+        return {"error": "Dataset not found for insights."}
+
     try:
-        response = ollama.chat(model='llama3', messages=[
-            {'role': 'system', 'content': "You are a Data Scientist. Write a short, plain-English summary of this dataset."},
+        df = pl.read_parquet(data_path)
+        summary = f"Dataset Summary:\nRows: {len(df)}\nColumns: {', '.join(df.columns)}"
+        
+        response = ollama.chat(model='llama3:latest', messages=[
+            {'role': 'system', 'content': "You are a professional Data Scientist. Provide a 3-sentence high-level summary of this dataset's structure and potential."},
             {'role': 'user', 'content': summary}
         ])
         return {"insights": response['message']['content']}
-    except Exception:
-        return {"error": "Local AI Server (Ollama) is not running."}
+    
+    except Exception as e:
+        print(f"Ollama Crash: {str(e)}")
+        return {"error": f"AI Engine Error: {str(e)}"}
 
 def execute_natural_query(session_id: str, user_query: str, is_edit: bool = False):
     session_dir = f"./sessions/{session_id}"
@@ -244,7 +398,8 @@ def execute_natural_query(session_id: str, user_query: str, is_edit: bool = Fals
         else:
             system_prompt += "\nReturn ONLY a valid SQL SELECT statement. You are a machine. Do NOT output conversational text. Start your response strictly with the word SELECT."
 
-        response = ollama.chat(model='llama3', messages=[{'role': 'system', 'content': system_prompt}])
+        # FIX: Updated to 'llama3:latest' to match your local setup
+        response = ollama.chat(model='llama3:latest', messages=[{'role': 'system', 'content': system_prompt}])
         raw_response = response['message']['content'].strip()
 
         match = re.search(r'```sql\n(.*?)```', raw_response, re.DOTALL)
