@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, Database, Loader2, ShieldCheck, Trash2, Edit, BarChart, Brain, Terminal } from "lucide-react";
+import { UploadCloud, Database, Loader2, ShieldCheck, Trash2, Edit, BarChart, Brain, Terminal, AlertOctagon, XCircle, X, ArrowRight } from "lucide-react";
 import axios from "axios";
 
 // Component Imports
@@ -12,15 +12,26 @@ import ReviewEdit from "../components/ReviewEdit";
 import Visualizer from "../components/Visualizer";
 import Insights from "../components/Insights";
 import Query from "../components/Query";
+import Compare from "../components/Compare";
 
 // Define the stages of our pipeline
-type PipelineStep = 'upload' | 'detect' | 'clean' | 'edit' | 'visualize' | 'insights' | 'query';
+type PipelineStep = 'upload' | 'detect' | 'insights' | 'clean' | 'compare' | 'edit' | 'visualize' | 'query';
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState<PipelineStep>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // --- Cached Insights (survives tab switches) ---
+  const [cachedInsights, setCachedInsights] = useState<Array<{observation: string; insight: string; action: string}> | null>(null);
+
+  // --- NEW: State for AI Recommended Cleaning ---
+  const [recommendedMethod, setRecommendedMethod] = useState<string>('quarantine');
+  const [cleaningRationale, setCleaningRationale] = useState<string>('');
+
+  // State to hold the Gatekeeper contract errors
+  const [contractErrors, setContractErrors] = useState<string[] | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -40,30 +51,40 @@ export default function Home() {
     try {
       const response = await axios.post("http://127.0.0.1:8000/api/upload", formData);
       setSessionId(response.data.session_id);
+      setCachedInsights(null); // Clear stale insights from prior session
+
+      // --- Capture the AI recommendations from the backend ---
+      setRecommendedMethod(response.data.recommended_cleaning || 'quarantine');
+      setCleaningRationale(response.data.cleaning_rationale || '');
+
       // Automatically move to the detection phase once uploaded
       setCurrentStep('detect');
     } catch (err: any) {
-      // Unmask the exact error from the Python backend!
-      const errorMessage = err.response?.data?.detail || err.message || "Unknown error occurred";
-      console.error("Upload Error Details:", errorMessage);
-
-      // Pop up an alert so you can see it right on the screen
-      alert(`Upload Failed: ${errorMessage}`);
+      // Catch the Gatekeeper Schema Enforcement error
+      if (err.response?.status === 400 && err.response?.data?.detail?.message === "Data Quality Contract Failed") {
+        setContractErrors(err.response.data.detail.errors);
+      } else {
+        // Fallback for standard server errors
+        const errorMessage = err.response?.data?.detail || err.message || "Unknown error occurred";
+        console.error("Upload Error Details:", errorMessage);
+        alert(`Upload Failed: ${errorMessage}`);
+      }
     } finally {
       setIsUploading(false);
     }
   };
 
-  // The Sleek Top Navigation Bar
+  // The Sleek Top Navigation Bar (REORDERED)
   const renderNav = () => {
     if (currentStep === 'upload') return null;
 
     const steps = [
       { id: 'detect', icon: <ShieldCheck size={16} />, label: 'Detection' },
+      { id: 'insights', icon: <Brain size={16} />, label: 'Insights' }, // Moved before Cleaning
       { id: 'clean', icon: <Trash2 size={16} />, label: 'Cleaning' },
+      { id: 'compare', icon: <ArrowRight size={16} />, label: 'Compare' },
       { id: 'edit', icon: <Edit size={16} />, label: 'Edit' },
       { id: 'visualize', icon: <BarChart size={16} />, label: 'Visualizer' },
-      { id: 'insights', icon: <Brain size={16} />, label: 'Insights' },
       { id: 'query', icon: <Terminal size={16} />, label: 'Query' }
     ];
 
@@ -134,11 +155,28 @@ export default function Home() {
                 <h2 className="text-2xl font-semibold mb-1">Anomaly Detection Engine</h2>
                 <p className="text-neutral-400">Review the corrupted rows and understand exactly why the AI flagged them.</p>
               </div>
-              {/* Added key={sessionId} to force React to unmount/remount on new sessions */}
               {sessionId && <Detection key={sessionId} sessionId={sessionId} />}
 
-              {/* Navigation Button to next step */}
               <div className="mt-8 flex justify-end">
+                {/* Updated flow: Detection -> Insights */}
+                <button onClick={() => setCurrentStep('insights')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
+                  Proceed to AI Insights &rarr;
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 3: INSIGHTS (MOVED HERE) */}
+          {currentStep === 'insights' && (
+            <motion.div key="insights" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
+              <div className="mb-6">
+                <h2 className="text-2xl font-semibold mb-1">AI Contextual Insights</h2>
+                <p className="text-neutral-400">A structured OIA (Observation, Insight, Action) analysis of your data.</p>
+              </div>
+              {sessionId && <Insights sessionId={sessionId} cachedInsights={cachedInsights} onInsightsLoaded={setCachedInsights} />}
+
+              <div className="mt-8 flex justify-end">
+                {/* Added flow: Insights -> Cleaning */}
                 <button onClick={() => setCurrentStep('clean')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
                   Proceed to Smart Cleaning &rarr;
                 </button>
@@ -146,68 +184,129 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 3: CLEANING */}
+          {/* STEP 4: CLEANING */}
           {currentStep === 'clean' && (
             <motion.div key="clean" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-5xl mt-10">
               <div className="mb-6 text-center">
                 <h2 className="text-2xl font-semibold mb-1">Smart Cleaning Strategy</h2>
                 <p className="text-neutral-400">Choose how the AI should handle the anomalies detected in your dataset.</p>
               </div>
-              {/* Added key={sessionId} */}
-              {sessionId && <Clean key={sessionId} sessionId={sessionId} onComplete={() => setCurrentStep('edit')} />}
+              {sessionId && (
+                <Clean
+                  key={sessionId}
+                  sessionId={sessionId}
+                  onComplete={() => setCurrentStep('compare')}
+                  recommendedMethod={recommendedMethod}
+                  cleaningRationale={cleaningRationale}
+                />
+              )}
             </motion.div>
           )}
 
-          {/* STEP 4: REVIEW & EDIT */}
+          {/* STEP 5: A/B COMPARISON */}
+          {currentStep === 'compare' && (
+            <motion.div key="compare" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
+              <div className="mb-6">
+                <h2 className="text-2xl font-semibold mb-1">A/B Repair Comparison</h2>
+                <p className="text-neutral-400">Review the high-fidelity modifications made by the predictive AI imputer.</p>
+              </div>
+              {sessionId && <Compare key={sessionId} sessionId={sessionId} />}
+
+              <div className="mt-8 flex justify-end">
+                <button onClick={() => setCurrentStep('edit')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
+                  Proceed to Review & Edit &rarr;
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 6: REVIEW & EDIT */}
           {currentStep === 'edit' && (
             <motion.div key="edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
                 <h2 className="text-2xl font-semibold mb-1">Review & Edit</h2>
                 <p className="text-neutral-400">Your data has been sanitized. You can now make manual overrides before exporting.</p>
               </div>
-              {/* Added key={sessionId} */}
               {sessionId && <ReviewEdit key={sessionId} sessionId={sessionId} />}
             </motion.div>
           )}
 
-          {/* STEP 5: VISUALIZER */}
+          {/* STEP 7: VISUALIZER */}
           {currentStep === 'visualize' && (
             <motion.div key="viz" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
                 <h2 className="text-2xl font-semibold mb-1">Dataset Visualizer</h2>
                 <p className="text-neutral-400">Explore the macro-level impact of sanitization and discover variable correlations.</p>
               </div>
-              {/* Added key={sessionId} */}
               {sessionId && <Visualizer key={sessionId} sessionId={sessionId} />}
             </motion.div>
           )}
 
-          {/* STEP 6: INSIGHTS */}
-          {currentStep === 'insights' && (
-            <motion.div key="insights" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
-              <div className="mb-6">
-                <h2 className="text-2xl font-semibold mb-1">AI Contextual Insights</h2>
-                <p className="text-neutral-400">A plain-English summary of your data, generated securely on your local machine.</p>
-              </div>
-              {/* Added key={sessionId} */}
-              {sessionId && <Insights key={sessionId} sessionId={sessionId} />}
-            </motion.div>
-          )}
-
-          {/* STEP 7: QUERY */}
+          {/* STEP 8: QUERY */}
           {currentStep === 'query' && (
             <motion.div key="query" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
                 <h2 className="text-2xl font-semibold mb-1">Text-to-Query Engine</h2>
                 <p className="text-neutral-400">Ask complex questions in English and watch the AI execute them instantly.</p>
               </div>
-              {/* Added key={sessionId} */}
               {sessionId && <Query key={sessionId} sessionId={sessionId} />}
             </motion.div>
           )}
 
         </AnimatePresence>
       </div>
+
+      {/* --- DATA CONTRACT VIOLATION MODAL --- */}
+      <AnimatePresence>
+        {contractErrors && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-neutral-900 border border-red-500/30 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            >
+              <div className="bg-red-500/10 p-6 border-b border-red-500/20 flex items-start justify-between">
+                <div className="flex items-center">
+                  <div className="bg-red-500/20 p-3 rounded-xl mr-4">
+                    <AlertOctagon className="w-8 h-8 text-red-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Data Contract Violation</h2>
+                    <p className="text-red-400 text-sm mt-1">Upload rejected by the Gatekeeper.</p>
+                  </div>
+                </div>
+                <button onClick={() => setContractErrors(null)} className="text-neutral-500 hover:text-white transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <p className="text-neutral-300 text-sm mb-4">
+                  The dataset you attempted to upload does not meet the minimum requirements for machine learning processing. Please resolve the following issues:
+                </p>
+
+                <ul className="space-y-3 mb-6">
+                  {contractErrors.map((error, idx) => (
+                    <li key={idx} className="flex items-start bg-black/40 p-3 rounded-lg border border-neutral-800">
+                      <XCircle className="w-5 h-5 text-red-500 mr-3 shrink-0 mt-0.5" />
+                      <span className="text-neutral-300 text-sm leading-relaxed">{error}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  onClick={() => setContractErrors(null)}
+                  className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl transition-colors border border-neutral-700"
+                >
+                  Acknowledge & Try Again
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </main>
   );
 }

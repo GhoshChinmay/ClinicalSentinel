@@ -8,7 +8,7 @@ It features a high-end, responsive "Deep Space" visual aesthetic using WebGL and
 
 - **Automated Anomaly Detection**: Uses state-of-the-art algorithms (Isolation Forest, Local Outlier Factor, and HistGradientBoostingClassifier) to flag anomalies intelligently and assigns an AI-generated reason for each flagged anomaly.
 - **Natural Language SQL Querying**: Uses local AI (Ollama with Llama 3) coupled with DuckDB to translate plain English queries into complex SQL statements, allowing for dynamic filtering, selecting, and even updating dataset records interactively.
-- **AI-Powered Insights**: Get an automated plain-English summary of your dataset.
+- **AI-Powered Insights (Fail-Safe)**: Get an automated structured OIA (Observation, Insight, Action) summary of your dataset. Uses a robust recursive JSON extractor with fuzzy key matching to handle arbitrary local LLM outputs, coupled with intelligent session caching to eliminate redundant processing.
 - **Advanced Data Sanitization**: Choose from multiple cleaning protocols including a secure **Quarantine Vault** (to audit isolated anomalies), Smart Winsorization, Categorical Masking, Contextual Imputation, and Hard Dropping.
 - **Interactive 3D Visualizations**: Experience a premium interface featuring 3D flip-animations that explain complex statistical cleaning methods in plain English, paired with Recharts and AG Grid for statistical distributions.
 - **High-Performance Architecture**: Backend built with Python (FastAPI, Polars, DuckDB) capable of processing millions of rows quickly with resilient fallback parsing.
