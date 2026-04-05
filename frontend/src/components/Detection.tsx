@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '@/lib/api';
+import type { AnomalyRow, SessionDataResponse } from '@/types/api';
 import { motion } from 'framer-motion';
 import { ShieldAlert, CheckCircle, FileWarning, AlertTriangle, AlertCircle, Crosshair } from 'lucide-react';
 
 export default function Detection({ sessionId }: { sessionId: string }) {
-    const [data, setData] = useState<any[]>([]);
+    const [data, setData] = useState<AnomalyRow[]>([]);
     const [totalAnomalies, setTotalAnomalies] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,7 @@ export default function Detection({ sessionId }: { sessionId: string }) {
 
         const fetchData = async () => {
             try {
-                const res = await axios.get(`http://127.0.0.1:8000/api/data/${sessionId}?is_cleaned=false&only_anomalies=true`);
+                const res = await api.get<SessionDataResponse>(`/api/data/${sessionId}?is_cleaned=false&only_anomalies=true`);
 
                 if (res.data && Array.isArray(res.data.data)) {
                     setData(res.data.data);
@@ -29,9 +30,10 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                 } else {
                     throw new Error("Invalid data format received from the server.");
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Failed to load anomalies", err);
-                setError(err.response?.data?.detail || err.message || "Failed to load anomaly report.");
+                const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+                setError(axiosErr.response?.data?.detail || axiosErr.message || "Failed to load anomaly report.");
             } finally {
                 setLoading(false);
             }
@@ -131,12 +133,7 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                             </thead>
                             <tbody className="divide-y divide-neutral-800">
                                 {displayData.map((row, idx) => {
-                                    const rowData = { ...row };
-
-                                    // Remove metadata so the JSON rendering looks clean
-                                    delete rowData.is_anomaly;
-                                    delete rowData.AI_Reason;
-                                    delete rowData.Threat_Score;
+                                    const { is_anomaly: _a, AI_Reason: _b, Threat_Score: _c, ...rowData } = row;
 
                                     return (
                                         <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }} key={idx} className="hover:bg-neutral-900/50">
@@ -149,7 +146,7 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                                                             <span className="text-[9px] text-neutral-500 uppercase font-bold tracking-wider mb-0.5">{key}</span>
                                                             <span className="text-xs font-mono text-neutral-300 truncate" title={String(val)}>
                                                                 {/* Format long decimals so they don't break the UI */}
-                                                                {typeof val === 'number' && !Number.isInteger(val) ? val.toFixed(4) : String(val)}
+                                                                {typeof val === 'number' && Number.isFinite(val) && !Number.isInteger(val) ? val.toFixed(4) : String(val ?? '—')}
                                                             </span>
                                                         </div>
                                                     ))}

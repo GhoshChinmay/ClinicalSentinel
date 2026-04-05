@@ -1,7 +1,10 @@
 fastapi
 uvicorn
-python-multipart
 polars
-scikit-learn
 pandas
 numpy
+scikit-learn
+python-multipart
+ollama
+duckdb
+requests

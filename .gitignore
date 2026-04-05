@@ -50,8 +50,11 @@ env/
 .venv/
 .env/
 
-# Data
+# Data & sessions
 *.csv
+*.parquet
+backend/data/*
+!backend/data/README.md
 temp_uploads/
 backend/temp_uploads/
 backend/sessions/

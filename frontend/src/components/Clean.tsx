@@ -1,17 +1,21 @@
+"use client";
+
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '@/lib/api';
+import { API_BASE } from '@/lib/api';
+import type { AnomalyRow, QuarantineResponse, CleanResponse } from '@/types/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, Scissors, CheckCircle, Loader2, Shield, EyeOff, Activity, X, AlertTriangle, Download, Info } from 'lucide-react';
+import { Trash2, Scissors, CheckCircle, Loader2, Shield, EyeOff, Activity, X, AlertTriangle, Download, Info, Sparkles } from 'lucide-react';
 
 // --- THE QUARANTINE VAULT MODAL (Unchanged) ---
 function QuarantineVaultModal({ sessionId, onClose }: { sessionId: string, onClose: () => void }) {
-    const [auditData, setAuditData] = useState<any[]>([]);
+    const [auditData, setAuditData] = useState<AnomalyRow[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchVault = async () => {
             try {
-                const res = await axios.get(`http://127.0.0.1:8000/api/quarantine/${sessionId}`);
+                const res = await api.get<QuarantineResponse>(`/api/quarantine/${sessionId}`);
                 setAuditData(res.data.data || []);
             } catch (err) {
                 console.error("Failed to fetch quarantine vault");
@@ -39,7 +43,22 @@ function QuarantineVaultModal({ sessionId, onClose }: { sessionId: string, onClo
                         </div>
                     </div>
                     <div className="flex items-center space-x-4">
-                        <button className="flex items-center text-xs font-bold text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 px-4 py-2 rounded-lg transition-colors">
+                        <button
+                            onClick={() => {
+                                const headers = Object.keys(auditData[0] || {}).join(',');
+                                const rows = auditData.map(row => Object.values(row).join(','));
+                                const csv = [headers, ...rows].join('\n');
+                                const blob = new Blob([csv], { type: 'text/csv' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'quarantine_audit.csv';
+                                a.click();
+                                URL.revokeObjectURL(url);
+                            }}
+                            disabled={auditData.length === 0}
+                            className="flex items-center text-xs font-bold text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                        >
                             <Download className="w-4 h-4 mr-2" />
                             Export Audit CSV
                         </button>
@@ -100,10 +119,18 @@ function QuarantineVaultModal({ sessionId, onClose }: { sessionId: string, onClo
 }
 
 // --- MAIN CLEAN TAB COMPONENT ---
-export default function Clean({ sessionId, onComplete }: { sessionId: string, onComplete: () => void }) {
+interface CleanProps {
+    sessionId: string;
+    onComplete: () => void;
+    recommendedMethod?: string;
+    cleaningRationale?: string;
+}
+
+export default function Clean({ sessionId, onComplete, recommendedMethod = 'quarantine', cleaningRationale }: CleanProps) {
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
     const [successMsg, setSuccessMsg] = useState<string | null>(null);
     const [showVault, setShowVault] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     // Upgraded array with Analogies and Plain English Explanations
     const cleaningMethods = [
@@ -130,9 +157,9 @@ export default function Clean({ sessionId, onComplete }: { sessionId: string, on
         },
         {
             id: 'impute', icon: Activity, title: 'Contextual Imputation',
-            techDesc: 'Replaces anomalies with the statistical median of the healthy data.',
+            techDesc: 'Uses Predictive KNN to fill in corrupted cells based on the user\'s past behavior.',
             analogy: 'The Auto-Correct',
-            simpleDesc: 'Acts like smart auto-correct. If a sensor glitches and drops a number, the AI looks at the surrounding normal data and fills in the blank with an educated guess.',
+            simpleDesc: 'Acts like smart auto-correct. If a sensor glitches and drops a number, the AI looks at the surrounding normal data and fills in the blank with a highly educated guess.',
             color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', btnHover: 'hover:bg-emerald-600'
         },
         {
@@ -146,11 +173,15 @@ export default function Clean({ sessionId, onComplete }: { sessionId: string, on
 
     const handleClean = async (action: string) => {
         setLoadingAction(action);
+        setErrorMsg(null);
         try {
-            const res = await axios.post(`http://127.0.0.1:8000/api/clean/${sessionId}`, { action });
+            const res = await api.post<CleanResponse>(`/api/clean/${sessionId}?action=${action}`);
             setSuccessMsg(`Successfully applied ${action}. Final dataset has ${res.data.new_total} rows.`);
-        } catch (err) {
-            console.error("Failed to clean data");
+        } catch (err: unknown) {
+            const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+            const detail = axiosErr.response?.data?.detail || axiosErr.message || "An unknown error occurred during cleaning.";
+            console.error("DataSentinel: Clean failed —", detail);
+            setErrorMsg(`Cleaning failed: ${detail}`);
         } finally {
             setLoadingAction(null);
         }
@@ -170,70 +201,102 @@ export default function Clean({ sessionId, onComplete }: { sessionId: string, on
                             Open Quarantine Vault
                         </button>
                         <button onClick={onComplete} className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition-colors flex items-center">
-                            Continue to Export <Loader2 className="w-4 h-4 ml-2 animate-spin opacity-0 hover:opacity-100" />
+                            Continue to Export →
                         </button>
                     </div>
                 </motion.div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 perspective-[1000px]">
-                    {cleaningMethods.map((method) => {
-                        const Icon = method.icon;
-                        const isRecommended = method.id === 'quarantine';
-
-                        return (
-                            <div key={method.id} className="group relative w-full h-[280px] [perspective:1000px]">
-                                {/* 3D Flip Container */}
-                                <div className="w-full h-full transition-transform duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
-
-                                    {/* --- FRONT OF CARD (Tech View) --- */}
-                                    <div className={`absolute inset-0 [backface-visibility:hidden] bg-neutral-900 border border-neutral-800 p-8 rounded-2xl flex flex-col`}>
-                                        {isRecommended && (
-                                            <div className="absolute top-0 right-0 bg-blue-500/10 text-blue-400 text-xs font-bold px-3 py-1 rounded-bl-lg uppercase tracking-wider z-10">Recommended</div>
-                                        )}
-
-                                        <div className="flex items-center justify-between mb-6">
-                                            <div className={`w-12 h-12 ${method.bg} rounded-xl flex items-center justify-center`}>
-                                                <Icon className={`w-6 h-6 ${method.color}`} />
-                                            </div>
-                                            <div className="flex items-center text-neutral-500 text-xs">
-                                                <Info className="w-4 h-4 mr-1" /> Hover to learn
-                                            </div>
-                                        </div>
-
-                                        <h3 className="text-xl font-semibold mb-2">{method.title}</h3>
-                                        <p className="text-neutral-400 text-sm flex-1">{method.techDesc}</p>
-                                    </div>
-
-                                    {/* --- BACK OF CARD (Plain English / Action View) --- */}
-                                    <div className={`absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-neutral-800 border ${method.border} p-8 rounded-2xl flex flex-col justify-between`}>
-
-                                        <div>
-                                            <div className="flex items-center mb-3">
-                                                <Icon className={`w-5 h-5 mr-2 ${method.color}`} />
-                                                <h3 className={`text-lg font-bold ${method.color}`}>"{method.analogy}"</h3>
-                                            </div>
-                                            <p className="text-white text-sm leading-relaxed">{method.simpleDesc}</p>
-                                        </div>
-
-                                        <button
-                                            onClick={() => handleClean(method.id)}
-                                            disabled={!!loadingAction}
-                                            className={`w-full py-3 mt-4 text-white font-bold rounded-lg transition-colors flex justify-center items-center shadow-lg ${isRecommended ? 'bg-blue-600 hover:bg-blue-500' : `bg-neutral-900 ${method.btnHover}`}`}
-                                        >
-                                            {loadingAction === method.id ? (
-                                                <Loader2 className="w-5 h-5 animate-spin" />
-                                            ) : (
-                                                `Apply ${method.id.charAt(0).toUpperCase() + method.id.slice(1)}`
-                                            )}
-                                        </button>
-
-                                    </div>
-
-                                </div>
+                <>
+                    {/* --- NEW: AI RECOMMENDATION BANNER --- */}
+                    {cleaningRationale && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 p-6 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-start shadow-[0_0_30px_rgba(59,130,246,0.1)]">
+                            <Sparkles className="w-8 h-8 text-blue-400 mr-4 shrink-0 mt-1" />
+                            <div>
+                                <h3 className="text-lg font-bold text-white mb-1">
+                                    AI Recommended Action: {recommendedMethod.charAt(0).toUpperCase() + recommendedMethod.slice(1)}
+                                </h3>
+                                <p className="text-blue-200 text-sm leading-relaxed">{cleaningRationale}</p>
                             </div>
-                        );
-                    })}
-                </div>
+                        </motion.div>
+                    )}
+
+                    {/* --- ERROR BANNER --- */}
+                    {errorMsg && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 p-5 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-start">
+                            <AlertTriangle className="w-6 h-6 text-red-400 mr-3 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                                <h3 className="text-sm font-bold text-red-400 mb-1">Operation Failed</h3>
+                                <p className="text-red-300/80 text-sm leading-relaxed">{errorMsg}</p>
+                            </div>
+                            <button onClick={() => setErrorMsg(null)} className="p-1 text-red-400 hover:text-white transition-colors ml-4">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </motion.div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 perspective-[1000px]">
+                        {cleaningMethods.map((method) => {
+                            const Icon = method.icon;
+                            // Dynamically match the backend's recommendation to the card ID
+                            const isRecommended = method.id === recommendedMethod;
+
+                            return (
+                                <div key={method.id} className="group relative w-full h-[280px] [perspective:1000px]">
+                                    {/* 3D Flip Container */}
+                                    <div className="w-full h-full transition-transform duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
+
+                                        {/* --- FRONT OF CARD (Tech View) --- */}
+                                        <div className={`absolute inset-0 [backface-visibility:hidden] bg-neutral-900 border ${isRecommended ? 'border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-neutral-800'} p-8 rounded-2xl flex flex-col`}>
+                                            {isRecommended && (
+                                                <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-bl-lg rounded-tr-xl uppercase tracking-wider z-10 shadow-lg">
+                                                    AI Pick
+                                                </div>
+                                            )}
+
+                                            <div className="flex items-center justify-between mb-6">
+                                                <div className={`w-12 h-12 ${method.bg} rounded-xl flex items-center justify-center`}>
+                                                    <Icon className={`w-6 h-6 ${method.color}`} />
+                                                </div>
+                                                <div className="flex items-center text-neutral-500 text-xs">
+                                                    <Info className="w-4 h-4 mr-1" /> Hover to learn
+                                                </div>
+                                            </div>
+
+                                            <h3 className="text-xl font-semibold mb-2">{method.title}</h3>
+                                            <p className="text-neutral-400 text-sm flex-1">{method.techDesc}</p>
+                                        </div>
+
+                                        {/* --- BACK OF CARD (Plain English / Action View) --- */}
+                                        <div className={`absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-neutral-800 border ${method.border} p-8 rounded-2xl flex flex-col justify-between`}>
+
+                                            <div>
+                                                <div className="flex items-center mb-3">
+                                                    <Icon className={`w-5 h-5 mr-2 ${method.color}`} />
+                                                    <h3 className={`text-lg font-bold ${method.color}`}>"{method.analogy}"</h3>
+                                                </div>
+                                                <p className="text-white text-sm leading-relaxed">{method.simpleDesc}</p>
+                                            </div>
+
+                                            <button
+                                                onClick={() => handleClean(method.id)}
+                                                disabled={!!loadingAction}
+                                                className={`w-full py-3 mt-4 text-white font-bold rounded-lg transition-colors flex justify-center items-center shadow-lg ${isRecommended ? 'bg-blue-600 hover:bg-blue-500' : `bg-neutral-900 ${method.btnHover}`}`}
+                                            >
+                                                {loadingAction === method.id ? (
+                                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                                ) : (
+                                                    `Apply ${method.id.charAt(0).toUpperCase() + method.id.slice(1)}`
+                                                )}
+                                            </button>
+
+                                        </div>
+
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
             )}
 
             <AnimatePresence>

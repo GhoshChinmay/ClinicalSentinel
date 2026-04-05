@@ -3,7 +3,8 @@
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadCloud, Database, Loader2, ShieldCheck, Trash2, Edit, BarChart, Brain, Terminal, AlertOctagon, XCircle, X, ArrowRight } from "lucide-react";
-import axios from "axios";
+import api from "@/lib/api";
+import type { UploadResponse } from "@/types/api";
 
 // Component Imports
 import Detection from "../components/Detection";
@@ -32,6 +33,8 @@ export default function Home() {
 
   // State to hold the Gatekeeper contract errors
   const [contractErrors, setContractErrors] = useState<string[] | null>(null);
+  // State for general upload errors
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,11 +48,13 @@ export default function Home() {
 
   const processUpload = async (uploadFile: File) => {
     setIsUploading(true);
+    setUploadError(null);
+    setContractErrors(null);
     const formData = new FormData();
     formData.append("file", uploadFile);
 
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/upload", formData);
+      const response = await api.post<UploadResponse>("/api/upload/", formData);
       setSessionId(response.data.session_id);
       setCachedInsights(null); // Clear stale insights from prior session
 
@@ -59,15 +64,16 @@ export default function Home() {
 
       // Automatically move to the detection phase once uploaded
       setCurrentStep('detect');
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number; data?: { detail?: { message?: string; errors?: string[] } | string } }; message?: string };
       // Catch the Gatekeeper Schema Enforcement error
-      if (err.response?.status === 400 && err.response?.data?.detail?.message === "Data Quality Contract Failed") {
-        setContractErrors(err.response.data.detail.errors);
+      const detail = axiosErr.response?.data?.detail;
+      if (axiosErr.response?.status === 400 && detail && typeof detail === "object" && (detail as { message?: string }).message === "Data Quality Contract Failed") {
+        setContractErrors((detail as { errors: string[] }).errors);
       } else {
-        // Fallback for standard server errors
-        const errorMessage = err.response?.data?.detail || err.message || "Unknown error occurred";
+        const errorMessage = (typeof detail === "string" ? detail : null) || axiosErr.message || "Unknown error occurred";
         console.error("Upload Error Details:", errorMessage);
-        alert(`Upload Failed: ${errorMessage}`);
+        setUploadError(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
       }
     } finally {
       setIsUploading(false);
@@ -145,6 +151,18 @@ export default function Home() {
                   </div>
                 )}
               </div>
+
+              {/* Upload Error Banner */}
+              {uploadError && (
+                <div className="mt-4 w-full p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start text-red-400">
+                  <XCircle className="w-5 h-5 mr-3 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-bold text-sm mb-1">Upload Failed</p>
+                    <p className="text-sm text-red-300/80">{uploadError}</p>
+                  </div>
+                  <button onClick={() => setUploadError(null)} className="ml-4 text-red-400 hover:text-white"><X className="w-4 h-4" /></button>
+                </div>
+              )}
             </motion.div>
           )}
 

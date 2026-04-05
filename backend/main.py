@@ -1,200 +1,274 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-import shutil
+"""
+DataSentinel — FastAPI Application
+API routes, file upload handling, and session management.
+"""
+
 import os
-import duckdb  # <-- Added missing DuckDB import
 import polars as pl
-import pandas as pd
-import numpy as np
+from fastapi import FastAPI, UploadFile, File, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
-# Ensure execute_natural_query handles the LLM translation in your core_engine!
-from core_engine import process_and_detect, clean_dataset, get_viz_data, generate_insights, execute_natural_query, confirm_and_execute_edit
+from utils import _session_dir, _BACKEND_DIR, logger, validate_session_id, cleanup_stale_sessions
+from schema import SchemaEnforcer
+from engines import (
+    process_and_detect,
+    clean_dataset,
+    get_viz_data,
+    generate_insights,
+    execute_natural_query,
+    confirm_and_execute_edit,
+)
 
-app = FastAPI(title="DataSentinel Local Backend")
+app = FastAPI()
+
+# --- CORS: environment-based whitelist instead of wildcard ---
+_ALLOWED_ORIGINS = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- PYDANTIC MODELS ---
-class CleanRequest(BaseModel):
-    action: str = "drop"
 
-class QueryEditRequest(BaseModel):
-    user_query: str
-    is_edit: bool = False
-
-class ConfirmEditRequest(BaseModel):
-    sql_query: str
-
-# <-- THE FIX: Added the missing QueryRequest model
-class QueryRequest(BaseModel):
-    prompt: str
-
-
-# --- ROUTES ---
 @app.get("/")
-def read_root():
-    return {"message": "Antigravity bare-metal engine is online."}
+def root():
+    return {"status": "DataSentinel detection engine is online."}
 
-@app.post("/api/upload")
-async def upload_and_analyze(file: UploadFile = File(...)):
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only CSV files are supported right now.")
 
-    # --- THE NUKE PROTOCOL ---
-    # Wipe the entire sessions directory to guarantee zero contamination
-    if os.path.exists("./sessions"):
-        shutil.rmtree("./sessions", ignore_errors=True)
-    os.makedirs("./sessions", exist_ok=True)
+@app.post("/api/upload/")
+async def upload_csv(file: UploadFile = File(...)):
+    # Clean up stale sessions (>24h old) instead of nuking everything
+    cleanup_stale_sessions(max_age_hours=24)
 
-    os.makedirs("./temp_uploads", exist_ok=True)
-    temp_file_path = f"./temp_uploads/{file.filename}"
-
-    with open(temp_file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    os.makedirs(os.path.join(_BACKEND_DIR, "temp_uploads"), exist_ok=True)
+    temp_file_path = os.path.join(_BACKEND_DIR, "temp_uploads", file.filename)
 
     try:
-        results = process_and_detect(temp_file_path)
-        if "error" in results:
-            raise HTTPException(status_code=400, detail=results["error"])
-        return results
+        contents = await file.read()
+        with open(temp_file_path, "wb") as f:
+            f.write(contents)
+
+        # --- SCHEMA VALIDATION ---
+        try:
+            df = pl.read_csv(temp_file_path, infer_schema_length=1000000)
+        except Exception:
+            import pandas as pd
+            df = pl.from_pandas(pd.read_csv(temp_file_path, low_memory=False))
+
+        validation = SchemaEnforcer.validate(df)
+        if not validation["valid"]:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "rejected", "errors": validation["errors"]},
+            )
+
+        # Pass the already-loaded DataFrame to avoid double read
+        result = process_and_detect(df=df, file_path=temp_file_path)
+        return result
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Upload failed: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
     finally:
         if os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except PermissionError:
-                pass
+            os.remove(temp_file_path)
+
 
 @app.get("/api/data/{session_id}")
-def get_session_data(session_id: str, is_cleaned: str = "false", only_anomalies: str = "false"):
-    file_name = "cleaned_data.parquet" if is_cleaned == "true" else "raw_data.parquet"
-    parquet_path = f"./sessions/{session_id}/{file_name}"
-    
-    if not os.path.exists(parquet_path):
-        raise HTTPException(status_code=404, detail=f"Session data not found at {parquet_path}")
-
+def get_data(
+    session_id: str,
+    is_cleaned: bool = Query(False),
+    only_anomalies: bool = Query(False),
+):
     try:
-        df = pl.read_parquet(parquet_path)
-        
-        if only_anomalies == "true" and "is_anomaly" in df.columns:
-            anomaly_df = df.filter(pl.col("is_anomaly") == True)
-            total_anomalies = len(anomaly_df)
-            pandas_df = anomaly_df.head(100).to_pandas()
-        else:
-            total_anomalies = 0
-            pandas_df = df.head(1000).to_pandas()
-            
-        # CRITICAL FIX: Industrial-grade NaN and Infinity sanitization for large datasets
-        pandas_df = pandas_df.replace([np.inf, -np.inf], np.nan)
-        pandas_df = pandas_df.astype(object).where(pd.notna(pandas_df), None)
-        
-        records = pandas_df.to_dict(orient="records")
-        return {"data": records, "total_anomalies": total_anomalies}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse dataset chunk: {str(e)}")
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    session_dir = _session_dir(session_id)
+
+    if is_cleaned:
+        parquet_path = f"{session_dir}/cleaned_data.parquet"
+    else:
+        parquet_path = f"{session_dir}/raw_data.parquet"
+
+    if not os.path.exists(parquet_path):
+        return JSONResponse(status_code=404, content={"error": "Data not found"})
+
+    df = pl.read_parquet(parquet_path)
+
+    total_anomalies = 0
+    if "is_anomaly" in df.columns:
+        anomalies = df.filter(pl.col("is_anomaly") == True)
+        total_anomalies = len(anomalies)
+        if only_anomalies:
+            df = anomalies
+
+    return {
+        "data": df.to_dicts(),
+        "total_anomalies": total_anomalies,
+    }
+
 
 @app.post("/api/clean/{session_id}")
-def clean_data(session_id: str, request: CleanRequest):
-    results = clean_dataset(session_id, request.action)
-    if "error" in results: raise HTTPException(status_code=400, detail=results["error"])
-    return results
-
-@app.get("/api/download/{session_id}")
-def download_cleaned_data(session_id: str):
+def clean_data(session_id: str, action: str = Query("drop")):
     try:
-        df = pl.read_parquet(f"./sessions/{session_id}/cleaned_data.parquet")
-        csv_path = f"./sessions/{session_id}/cleaned_dataset.csv"
-        df.write_csv(csv_path)
-        return FileResponse(path=csv_path, filename="cleaned_dataset.csv", media_type="text/csv")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    result = clean_dataset(session_id, action)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.get("/api/compare/{session_id}")
+def compare_data(session_id: str):
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    session_dir = _session_dir(session_id)
+    raw_path = f"{session_dir}/raw_data.parquet"
+    clean_path = f"{session_dir}/cleaned_data.parquet"
+
+    if not os.path.exists(clean_path):
+        return JSONResponse(status_code=400, content={"error": "No cleaned data found."})
+
+    df_raw = pl.read_parquet(raw_path)
+    df_clean = pl.read_parquet(clean_path)
+
+    is_dropped = len(df_clean) < len(df_raw)
+
+    internal_cols = {"is_anomaly", "Threat_Score", "AI_Reason"}
+    engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+    engineered_prefixes = ("nlp_pc",)
+    velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
+
+    cols_to_drop = [
+        c for c in df_raw.columns
+        if c in internal_cols
+        or c.endswith(engineered_suffixes)
+        or any(c.startswith(p) for p in engineered_prefixes)
+        or c in velocity_names
+    ]
+    df_raw_clean_view = df_raw.drop([c for c in cols_to_drop if c in df_raw.columns])
+
+    return {
+        "is_dropped": is_dropped,
+        "original": df_raw_clean_view.head(50).to_dicts(),
+        "cleaned": df_clean.head(50).to_dicts(),
+        "count": len(df_clean),
+    }
+
 
 @app.get("/api/viz/{session_id}")
-def fetch_viz_data(session_id: str):
+def viz_data(session_id: str):
     try:
-        results = get_viz_data(session_id)
-        if "error" in results:
-            raise HTTPException(status_code=400, detail=results["error"])
-        return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    result = get_viz_data(session_id)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
 
 @app.get("/api/insights/{session_id}")
-def fetch_insights(session_id: str):
+def insights(session_id: str):
     try:
-        results = generate_insights(session_id)
-        if "error" in results:
-            raise HTTPException(status_code=400, detail=results["error"])
-        return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
 
-@app.post("/api/query/{session_id}")
-async def query_data(session_id: str, request: QueryRequest):
-    session_dir = f"./sessions/{session_id}"
-    
-    # 1. SMART FILE SELECTION
-    processed_path = f"{session_dir}/processed_data.parquet"
-    raw_path = f"{session_dir}/raw_data.parquet"
-    
-    if os.path.exists(processed_path):
-        target_file = processed_path
-    elif os.path.exists(raw_path):
-        target_file = raw_path
+    result = generate_insights(session_id)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.get("/api/download/{session_id}")
+def download_data(session_id: str, source: str = Query("cleaned")):
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    session_dir = _session_dir(session_id)
+
+    if source == "quarantine":
+        parquet_path = f"{session_dir}/quarantined_data.parquet"
+        csv_filename = "quarantined_data.csv"
     else:
-        raise HTTPException(status_code=404, detail="No data found for this session. Please upload a file first.")
+        parquet_path = f"{session_dir}/cleaned_data.parquet"
+        csv_filename = "cleaned_data.csv"
 
-    try:
-        # 2. Use your existing NLP to SQL engine from core_engine
-        # Make sure execute_natural_query returns a dict like: {"results": [...], "sql": "SELECT ..."}
-        results = execute_natural_query(session_id, request.prompt)
-        
-        if "error" in results:
-            raise HTTPException(status_code=400, detail=results["error"])
-            
-        return results
-        
-    except Exception as e:
-        error_msg = str(e)
-        if "Threat_Score" in error_msg:
-            error_msg = "Threat_Score not found. Did you forget to click 'Run Detection' first?"
-        raise HTTPException(status_code=400, detail=error_msg)
+    if not os.path.exists(parquet_path):
+        return JSONResponse(status_code=404, content={"error": f"No {source} data found."})
 
-@app.post("/api/query_edit/confirm/{session_id}")
-def confirm_edit(session_id: str, request: ConfirmEditRequest):
-    results = confirm_and_execute_edit(session_id, request.sql_query)
-    if "error" in results: raise HTTPException(status_code=400, detail=results["error"])
-    return results
+    df = pl.read_parquet(parquet_path)
+
+    # Strip internal columns if present
+    internal_cols = {"is_anomaly", "Threat_Score", "AI_Reason"}
+    cols_to_drop = [c for c in df.columns if c in internal_cols]
+    if cols_to_drop:
+        df = df.drop(cols_to_drop)
+
+    csv_path = f"{session_dir}/{csv_filename}"
+    df.write_csv(csv_path)
+
+    return FileResponse(path=csv_path, media_type="text/csv", filename=csv_filename)
+
 
 @app.get("/api/quarantine/{session_id}")
-def fetch_quarantine_vault(session_id: str):
-    quarantine_path = f"./sessions/{session_id}/quarantined_data.parquet"
-    
+def get_quarantine(session_id: str):
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    session_dir = _session_dir(session_id)
+    quarantine_path = f"{session_dir}/quarantined_data.parquet"
+
     if not os.path.exists(quarantine_path):
         return {"data": [], "count": 0}
-        
+
+    df = pl.read_parquet(quarantine_path)
+    return {"data": df.to_dicts(), "count": len(df)}
+
+
+@app.post("/api/query/{session_id}")
+def query_data(session_id: str, user_query: str = Query(...), mode: str = Query("explore")):
     try:
-        # Read the quarantined file
-        df = pl.read_parquet(quarantine_path)
-        
-        # Convert to Pandas for safe JSON serialization, grab the top 100 for the UI
-        pandas_df = df.head(100).to_pandas()
-        pandas_df = pandas_df.replace([np.inf, -np.inf], np.nan)
-        pandas_df = pandas_df.astype(object).where(pd.notna(pandas_df), None)
-        
-        return {
-            "data": pandas_df.to_dict(orient="records"),
-            "count": len(df)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    is_edit = mode == "edit"
+    result = execute_natural_query(session_id, user_query, is_edit=is_edit)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
+
+@app.post("/api/confirm-edit/{session_id}")
+def confirm_edit(session_id: str, sql_query: str = Query(...)):
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    result = confirm_and_execute_edit(session_id, sql_query)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result

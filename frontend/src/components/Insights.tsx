@@ -1,89 +1,15 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import axios from "axios";
-import { Loader2, Brain, Eye, Zap, AlertTriangle } from "lucide-react";
+import api from "@/lib/api";
+import type { OIAInsight, InsightsResponse } from "@/types/api";
+import { Brain, Eye, Zap, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
-
-interface OIAInsight {
-    observation: string;
-    insight: string;
-    action: string;
-}
 
 interface InsightsProps {
     sessionId: string;
     cachedInsights?: OIAInsight[] | null;
     onInsightsLoaded?: (insights: OIAInsight[]) => void;
-}
-
-// --- KEY ALIASES: every known LLM variant for each OIA field ---
-const OBSERVATION_KEYS = ['observation', 'observations', 'finding', 'findings', 'data_point', 'fact'];
-const INSIGHT_KEYS = ['insight', 'insights', 'analysis', 'impact', 'interpretation', 'implication'];
-const ACTION_KEYS = ['action', 'actions', 'recommendation', 'recommendations', 'recommended_action', 'recommended_actions', 'suggested_action', 'next_step', 'next_steps', 'remediation', 'resolution', 'suggestion', 'step'];
-
-function fuzzyGet(obj: Record<string, unknown>, aliases: string[]): string {
-    // Exact match first (case-insensitive)
-    for (const alias of aliases) {
-        const found = Object.entries(obj).find(([k]) => k.toLowerCase() === alias);
-        if (found && found[1] != null && String(found[1]).trim() !== '') {
-            return String(found[1]).trim();
-        }
-    }
-    // Partial/contains match as fallback (e.g. "recommended_action" matches "action")
-    for (const alias of aliases) {
-        const found = Object.entries(obj).find(([k]) => k.toLowerCase().includes(alias));
-        if (found && found[1] != null && String(found[1]).trim() !== '') {
-            return String(found[1]).trim();
-        }
-    }
-    return '';
-}
-
-function isOIALike(keys: string[]): boolean {
-    const lower = keys.map(k => k.toLowerCase());
-    return OBSERVATION_KEYS.some(k => lower.some(l => l.includes(k))) ||
-           INSIGHT_KEYS.some(k => lower.some(l => l.includes(k))) ||
-           ACTION_KEYS.some(k => lower.some(l => l.includes(k)));
-}
-
-function extractOIA(data: unknown): OIAInsight[] {
-    if (Array.isArray(data)) {
-        const results: OIAInsight[] = [];
-        for (const item of data) {
-            results.push(...extractOIA(item));
-        }
-        return results;
-    }
-
-    if (typeof data === 'object' && data !== null) {
-        const obj = data as Record<string, unknown>;
-        const keys = Object.keys(obj);
-
-        if (isOIALike(keys)) {
-            const observation = fuzzyGet(obj, OBSERVATION_KEYS);
-            const insight = fuzzyGet(obj, INSIGHT_KEYS);
-            const action = fuzzyGet(obj, ACTION_KEYS);
-
-            // Only accept if at least observation or insight is non-empty
-            if (observation || insight) {
-                return [{
-                    observation: observation || 'Data pattern detected in the uploaded dataset.',
-                    insight: insight || 'This pattern may impact downstream analysis and model training accuracy.',
-                    action: action || 'Review the anomalies in the Detection tab and proceed to Cleaning for remediation.',
-                }];
-            }
-        }
-
-        // Recurse into values
-        const results: OIAInsight[] = [];
-        for (const val of Object.values(obj)) {
-            results.push(...extractOIA(val));
-        }
-        return results;
-    }
-
-    return [];
 }
 
 export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }: InsightsProps) {
@@ -97,27 +23,23 @@ export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }
         setError(null);
         setInsights([]);
 
-        axios.get(`http://127.0.0.1:8000/api/insights/${sessionId}`)
+        api.get<InsightsResponse>(`/api/insights/${sessionId}`)
             .then((res) => {
-                const rawData = res.data?.insights ?? res.data;
-                const finalArray = extractOIA(rawData);
-                console.log('[DataSentinel] Insights received:', finalArray.length, 'items', finalArray);
-                setInsights(finalArray);
+                const items: OIAInsight[] = res.data?.insights || [];
+                setInsights(items);
                 setLoading(false);
-                // Cache in parent so tab switches don't re-fetch
-                if (onInsightsLoaded && finalArray.length > 0) {
-                    onInsightsLoaded(finalArray);
+                if (onInsightsLoaded && items.length > 0) {
+                    onInsightsLoaded(items);
                 }
             })
-            .catch((err) => {
-                console.error('[DataSentinel] Insights error:', err);
-                setError(err.response?.data?.detail || "Failed to generate AI insights.");
+            .catch((err: unknown) => {
+                const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+                setError(axiosErr.response?.data?.detail || "Failed to generate AI insights.");
                 setLoading(false);
             });
     };
 
     useEffect(() => {
-        // Only fetch if we don't already have cached data
         if (!hasCachedData) {
             fetchInsights();
         }
@@ -149,7 +71,6 @@ export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }
         );
     }
 
-    // --- EMPTY STATE HANDLER ---
     if (!loading && insights.length === 0 && !error) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-neutral-500 bg-neutral-900/30 rounded-2xl border border-neutral-800 border-dashed">
@@ -177,39 +98,30 @@ export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }
                         transition={{ duration: 0.5, delay: idx * 0.15 }}
                         className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden flex flex-col md:flex-row"
                     >
-                        {/* 1. Observation (Neutral) */}
                         <div className="flex-1 p-6 md:border-r border-neutral-800 bg-black/20">
                             <div className="flex items-center text-neutral-500 mb-3">
                                 <Eye className="w-4 h-4 mr-2" />
                                 <span className="text-xs font-bold uppercase tracking-wider">Observation</span>
                             </div>
-                            <p className="text-neutral-300 leading-relaxed text-sm">
-                                {item.observation}
-                            </p>
+                            <p className="text-neutral-300 leading-relaxed text-sm">{item.observation}</p>
                         </div>
 
-                        {/* 2. Insight (Purple tint) */}
                         <div className="flex-1 p-6 md:border-r border-neutral-800 bg-purple-900/5 relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl -mr-16 -mt-16"></div>
                             <div className="flex items-center text-purple-400 mb-3 relative z-10">
                                 <Brain className="w-4 h-4 mr-2" />
                                 <span className="text-xs font-bold uppercase tracking-wider">Insight</span>
                             </div>
-                            <p className="text-white font-medium leading-relaxed text-sm relative z-10">
-                                {item.insight}
-                            </p>
+                            <p className="text-white font-medium leading-relaxed text-sm relative z-10">{item.insight}</p>
                         </div>
 
-                        {/* 3. Action (Green tint) */}
                         <div className="flex-1 p-6 bg-emerald-900/5 relative overflow-hidden">
                             <div className="absolute bottom-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl -mr-16 -mb-16"></div>
                             <div className="flex items-center text-emerald-400 mb-3 relative z-10">
                                 <Zap className="w-4 h-4 mr-2" />
                                 <span className="text-xs font-bold uppercase tracking-wider">Recommended Action</span>
                             </div>
-                            <p className="text-emerald-50 leading-relaxed text-sm relative z-10">
-                                {item.action}
-                            </p>
+                            <p className="text-emerald-50 leading-relaxed text-sm relative z-10">{item.action}</p>
                         </div>
                     </motion.div>
                 ))}

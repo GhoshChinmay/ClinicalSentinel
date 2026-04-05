@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+import api from '@/lib/api';
+import { API_BASE } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Send, Loader2, Database, ShieldAlert, CheckCircle, Download, User, Bot, AlertCircle } from 'lucide-react';
 
@@ -10,7 +11,7 @@ type Message = {
     content?: string;
     sql?: string;
     columns?: string[];
-    data?: any[];
+    data?: Record<string, unknown>[];
     rowsAffected?: number;
 };
 
@@ -44,10 +45,7 @@ export default function Query({ sessionId }: { sessionId: string }) {
 
         try {
             // FIX 1: Changed 'user_query' to 'prompt' to perfectly match FastAPI's QueryRequest BaseModel
-            const res = await axios.post(`http://127.0.0.1:8000/api/query/${sessionId}`, {
-                prompt: newUserMsg.content,
-                is_edit: mode === 'edit'
-            });
+            const res = await api.post(`/api/query/${sessionId}?user_query=${encodeURIComponent(newUserMsg.content || '')}&mode=${mode}`);
 
             const aiMsgId = generateId();
             if (mode === 'edit') {
@@ -55,14 +53,17 @@ export default function Query({ sessionId }: { sessionId: string }) {
             } else {
                 setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', type: 'explore_result', sql: res.data.sql, columns: res.data.columns, data: res.data.data }]);
             }
-        } catch (err: any) {
-            // FIX 2: Crash-proof error extraction for FastAPI 422 Object Arrays
+        } catch (err: unknown) {
             let errorMsg = "Failed to process query.";
-            const detail = err.response?.data?.detail;
+            const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string };
+            const detail = axiosErr.response?.data?.detail;
 
             if (detail) {
                 if (Array.isArray(detail)) {
-                    errorMsg = `Validation Error: ${detail[0].loc[detail[0].loc.length - 1]} - ${detail[0].msg}`;
+                    const firstErr = detail[0];
+                    errorMsg = firstErr?.msg
+                        ? `Validation Error: ${firstErr.loc?.slice(-1)[0] ?? 'field'} - ${firstErr.msg}`
+                        : JSON.stringify(detail);
                 } else if (typeof detail === 'string') {
                     errorMsg = detail;
                 } else {
@@ -78,7 +79,7 @@ export default function Query({ sessionId }: { sessionId: string }) {
     const executeEdit = async (messageId: string, sqlQuery: string) => {
         setLoading(true);
         try {
-            const res = await axios.post(`http://127.0.0.1:8000/api/query_edit/confirm/${sessionId}`, { sql_query: sqlQuery });
+            const res = await api.post(`/api/confirm-edit/${sessionId}?sql_query=${encodeURIComponent(sqlQuery)}`);
 
             // Update the specific pending message to a success message
             setMessages(prev => prev.map(msg =>
@@ -86,14 +87,17 @@ export default function Query({ sessionId }: { sessionId: string }) {
                     ? { ...msg, type: 'success_edit', rowsAffected: res.data.rows_affected, columns: res.data.columns, data: res.data.preview_data }
                     : msg
             ));
-        } catch (err: any) {
-            // Re-use the crash-proof logic here as well
+        } catch (err: unknown) {
             let errorMsg = "Execution failed.";
-            const detail = err.response?.data?.detail;
+            const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string };
+            const detail = axiosErr.response?.data?.detail;
 
             if (detail) {
                 if (Array.isArray(detail)) {
-                    errorMsg = `Validation Error: ${detail[0].loc[detail[0].loc.length - 1]} - ${detail[0].msg}`;
+                    const firstErr = detail[0];
+                    errorMsg = firstErr?.msg
+                        ? `Validation Error: ${firstErr.loc?.slice(-1)[0] ?? 'field'} - ${firstErr.msg}`
+                        : JSON.stringify(detail);
                 } else if (typeof detail === 'string') {
                     errorMsg = detail;
                 } else {
@@ -106,11 +110,11 @@ export default function Query({ sessionId }: { sessionId: string }) {
         }
     };
 
-    const renderDataTable = (columns: string[], data: any[], isEdit: boolean) => (
+    const renderDataTable = (columns: string[], dataRows: Record<string, unknown>[], isEdit: boolean) => (
         <div className={`mt-3 border rounded-xl overflow-hidden overflow-x-auto ${isEdit ? 'bg-green-500/5 border-green-900/50' : 'bg-[#0A0A0A] border-neutral-800'}`}>
             <div className={`flex items-center text-xs p-3 border-b font-mono uppercase ${isEdit ? 'text-green-400 border-green-900/50' : 'text-neutral-500 border-neutral-800'}`}>
                 <Database className="w-3 h-3 mr-2" />
-                {isEdit ? 'Affected Rows Preview' : `Results (${data.length} rows)`}
+                {isEdit ? 'Affected Rows Preview' : `Results (${dataRows.length} rows)`}
             </div>
             <div className="max-h-64 overflow-y-auto custom-scrollbar">
                 <table className="w-full text-sm text-left text-neutral-300">
@@ -118,12 +122,19 @@ export default function Query({ sessionId }: { sessionId: string }) {
                         <tr>{columns.map((col: string) => <th key={col} className={`px-4 py-2 border-b whitespace-nowrap ${isEdit ? 'border-green-900/30' : 'border-neutral-800'}`}>{col}</th>)}</tr>
                     </thead>
                     <tbody>
-                        {data.length === 0 ? (
+                        {dataRows.length === 0 ? (
                             <tr><td colSpan={100} className="p-4 text-center text-neutral-500">No rows matched criteria.</td></tr>
                         ) : (
-                            data.map((row: any, i: number) => (
+                            dataRows.map((row: Record<string, unknown>, i: number) => (
                                 <tr key={i} className={`border-b hover:bg-white/5 ${isEdit ? 'border-green-900/30' : 'border-neutral-800/50'}`}>
-                                    {columns.map((col: string) => <td key={col} className="px-4 py-2 font-mono whitespace-nowrap">{String(row[col])}</td>)}
+                                    {columns.map((col: string) => (
+                                        <td key={col} className="px-4 py-2 font-mono whitespace-nowrap">
+                                            {row[col] === null || row[col] === undefined
+                                                ? <span className="text-neutral-600 italic">—</span>
+                                                : String(row[col])
+                                            }
+                                        </td>
+                                    ))}
                                 </tr>
                             ))
                         )}
@@ -147,7 +158,7 @@ export default function Query({ sessionId }: { sessionId: string }) {
                 </div>
                 <div className="flex items-center space-x-3">
                     {/* Permanent Download Button */}
-                    <button onClick={() => window.open(`http://127.0.0.1:8000/api/download/${sessionId}`, '_blank')} className="flex items-center px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white rounded-lg text-xs font-medium transition-colors">
+                    <button onClick={() => window.open(`${API_BASE}/api/download/${sessionId}`, '_blank')} className="flex items-center px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white rounded-lg text-xs font-medium transition-colors">
                         <Download className="w-3.5 h-3.5 mr-2" /> Download File
                     </button>
 
