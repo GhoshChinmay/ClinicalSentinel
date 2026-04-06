@@ -253,7 +253,7 @@ export default function Visualizer({ sessionId }: VizProps) {
                                             key={i}
                                             initial={{ cx, cy: 200, opacity: 0 }}
                                             animate={{ cx, cy, opacity: 0.6 }}
-                                            transition={{ duration: 0.5, delay: Math.random() * 0.2 }}
+                                            transition={{ duration: 0.5, delay: (i % 10) * 0.05 }}
                                             r="3"
                                             fill="#60A5FA"
                                             className="hover:opacity-100 hover:fill-white transition-all cursor-crosshair"

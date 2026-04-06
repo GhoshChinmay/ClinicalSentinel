@@ -8,6 +8,7 @@ from engines.cleaning import clean_dataset
 from engines.visualization import get_viz_data
 from engines.insights import generate_insights
 from engines.query import execute_natural_query, confirm_and_execute_edit
+from engines.quality import generate_quality_report
 
 __all__ = [
     "process_and_detect",
@@ -16,4 +17,5 @@ __all__ = [
     "generate_insights",
     "execute_natural_query",
     "confirm_and_execute_edit",
+    "generate_quality_report",
 ]

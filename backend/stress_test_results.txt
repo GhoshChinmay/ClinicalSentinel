@@ -1,0 +1,152 @@
+
+############################################################
+#  DataSentinel STRESS TEST - creditcard.csv
+############################################################
+
+============================================================
+PHASE 0: DATASET INSPECTION
+============================================================
+Shape: 284807 rows x 31 cols
+Columns: ['Time', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17', 'V18', 'V19', 'V20', 'V21', 'V22', 'V23', 'V24', 'V25', 'V26', 'V27', 'V28', 'Amount', 'Class']
+Dtypes: {'Time': 'Float64', 'V1': 'Float64', 'V2': 'Float64', 'V3': 'Float64', 'V4': 'Float64', 'V5': 'Float64', 'V6': 'Float64', 'V7': 'Float64', 'V8': 'Float64', 'V9': 'Float64'}
+Null counts: {'Time': 0, 'V1': 0, 'V2': 0, 'V3': 0, 'V4': 0, 'V5': 0, 'V6': 0, 'V7': 0, 'V8': 0, 'V9': 0}
+Sample:
+shape: (5, 31)
+ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö¼ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÉ
+Γöé Time     Γöå V1        Γöå V2        Γöå V3       Γöå ΓÇª Γöå V27      Γöå V28       Γöå Amount Γöå Class Γöé
+Γöé ---      Γöå ---       Γöå ---       Γöå ---      Γöå   Γöå ---      Γöå ---       Γöå ---    Γöå ---   Γöé
+Γöé f64      Γöå f64       Γöå f64       Γöå f64      Γöå   Γöå f64      Γöå f64       Γöå f64    Γöå i64   Γöé
+Γò₧ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¬ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòí
+Γöé 0.397108 Γöå 0.791734  Γöå 0.889738  Γöå 0.28118  Γöå ΓÇª Γöå 0.805173 Γöå 3.143771  Γöå 22.29  Γöå 0     Γöé
+Γöé 0.825705 Γöå 0.317954  Γöå -1.119083 Γöå 0.858058 Γöå ΓÇª Γöå 1.561025 Γöå -0.832686 Γöå 14.86  Γöå 0     Γöé
+Γöé 0.956693 Γöå -0.288307 Γöå -0.077718 Γöå 0.108613 Γöå ΓÇª Γöå 0.080972 Γöå 0.511831  Γöå 6.62   Γöå 0     Γöé
+Γöé 0.966278 Γöå 0.381609  Γöå 0.985788  Γöå 0.294533 Γöå ΓÇª Γöå 0.07866  Γöå 1.00105   Γöå 89.87  Γöå 0     Γöé
+Γöé 1.135589 Γöå 1.173522  Γöå 0.162837  Γöå -1.33424 Γöå ΓÇª Γöå 0.596263 Γöå -0.274139 Γöå 94.12  Γöå 0     Γöé
+ΓööΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö┤ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ
+
+============================================================
+TEST 1: UPLOAD creditcard.csv
+============================================================
+Status: 200 | Time: 40.36s
+{
+  "status": "success",
+  "session_id": "a23b4c9c-b84b-48a1-9a18-d0074a0ab9a3",
+  "total_rows": 284807,
+  "anomaly_count": 21120,
+  "recommendation": "Isolation Forest (Z-Score Scaled)",
+  "recommended_cleaning": "quarantine",
+  "cleaning_rationale": "Financial or Security data detected. 'Quarantine' is strictly recommended to isolate threats and anomalies without erasing the forensic evidence.",
+  "parquet_path": "C:\\Projects\\dataset-analyzer\\backend\\sessions\\a23b4c9c-b84b-48a1-9a18-d0074a0ab9a3/raw_data.parquet"
+}
+
+============================================================
+TEST 2: GET RAW DATA
+============================================================
+Status: 200 | Time: 42.66s
+Rows returned: 284807
+Anomalies: 21120
+
+============================================================
+TEST 3: GET ANOMALIES ONLY
+============================================================
+Status: 200 | Time: 5.66s
+Anomaly rows: 21120
+
+============================================================
+TEST 4: VISUALIZATION (pre-clean)
+============================================================
+Status: 200 | Time: 4.86s
+Numeric cols: 30
+Cat cols: 0
+Correlation: yes
+Health score: 97
+Raw histogram bins: 30
+Clean sample rows: 0
+
+============================================================
+TEST 5: AI INSIGHTS ENGINE
+============================================================
+Status: 200 | Time: 4.73s
+Insights returned: 3
+  [1] OBS: The anomaly detection engine flagged 21120 out of 284807 rows (7.4%) as statistically anomalous.
+       INS: These outliers will disproportionately skew aggregate statistics (mean, variance) and degrade the pe
+       ACT: Navigate to the Cleaning tab and select 'Quarantine' to safely isolate these rows into a forensic va
+  [2] OBS: The dataset contains 34 distinct features spanning numeric, categorical, and potentially temporal di
+       INS: High dimensionality increases the risk of the 'curse of dimensionality' ΓÇö models struggle to find si
+       ACT: Use the Visualizer tab to inspect the correlation heatmap and identify redundant or highly correlate
+  [3] OBS: Data profiling across all 284807 rows completed successfully. The schema includes columns: Time, V1,
+       INS: Proper schema validation and anomaly isolation before modeling ensures that your training pipeline r
+       ACT: After cleaning, export the sanitized CSV from the Edit tab to ensure all engineered features are str
+
+============================================================
+TEST 6: CLEANING (QUARANTINE)
+============================================================
+Status: 200 | Time: 2.28s
+Action: quarantine
+Original rows: 284807
+Cleaned rows: 263687
+Rows removed: 21120
+
+============================================================
+TEST 7: COMPARE RAW vs CLEANED
+============================================================
+Status: 200 | Time: 2.28s
+Is dropped: True
+Clean count: 263687
+Original sample: 50 rows
+Cleaned sample: 50 rows
+
+============================================================
+TEST 8: QUARANTINE VAULT
+============================================================
+Status: 200 | Time: 6.30s
+Quarantined rows: 21120
+
+============================================================
+TEST 9: VIZ AFTER CLEANING
+============================================================
+Status: 200 | Time: 6.50s
+Numeric cols: 30
+Cat cols: 0
+Correlation: yes
+Health score: 100
+Raw histogram bins: 30
+Clean histogram bins: 30
+Clean sample rows: 1000
+
+============================================================
+TEST 10: DOWNLOAD (CLEANED)
+============================================================
+Status: 200 | Time: 4.58s
+File size: 144.9 MB
+CSV lines: 263689
+Header: Time,V1,V2,V3,V4,V5,V6,V7,V8,V9,V10,V11,V12,V13,V14,V15,V16,V17,V18,V19,V20,V21,V22,V23,V24,V25,V26,V27,V28,Amount,Class
+
+============================================================
+TEST 10: DOWNLOAD (QUARANTINE)
+============================================================
+Status: 200 | Time: 2.42s
+File size: 11.6 MB
+CSV lines: 21122
+Header: Time,V1,V2,V3,V4,V5,V6,V7,V8,V9,V10,V11,V12,V13,V14,V15,V16,V17,V18,V19,V20,V21,V22,V23,V24,V25,V26,V27,V28,Amount,Class
+
+============================================================
+FINAL RESULTS
+============================================================
+
+Dataset: creditcard.csv (284807 rows x 31 cols)
+Results: 11/11 passed
+
+  [PASS] upload
+  [PASS] get_data
+  [PASS] anomalies_only
+  [PASS] visualization
+  [PASS] insights
+  [PASS] clean
+  [PASS] compare
+  [PASS] quarantine
+  [PASS] viz_post_clean
+  [PASS] download_cleaned
+  [PASS] download_quarantine
+
+ALL 11 TESTS PASSED!

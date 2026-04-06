@@ -8,3 +8,6 @@ python-multipart
 ollama
 duckdb
 requests
+openpyxl
+xlrd
+shap

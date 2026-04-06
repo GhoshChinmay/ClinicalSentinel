@@ -12,6 +12,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 export default function ReviewEdit({ sessionId }: { sessionId: string }) {
     const [rowData, setRowData] = useState<Record<string, unknown>[]>([]);
+    const [totalRows, setTotalRows] = useState<number>(0);
     const [columnDefs, setColumnDefs] = useState<{ field: string; sortable: boolean; filter: boolean }[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
@@ -22,9 +23,12 @@ export default function ReviewEdit({ sessionId }: { sessionId: string }) {
             try {
                 const res = await api.get(`/api/data/${sessionId}?is_cleaned=true`);
                 const data = res.data.data;
+                const total = res.data.total_rows || data.length;
+                
                 if (data.length > 0) {
                     setColumnDefs(Object.keys(data[0]).map(key => ({ field: key, sortable: true, filter: true })));
                     setRowData(data);
+                    setTotalRows(total);
                 } else {
                     setError("No cleaned data available. Complete the Cleaning step first, or note that your cleaning method may have removed all rows.");
                 }
@@ -70,7 +74,7 @@ export default function ReviewEdit({ sessionId }: { sessionId: string }) {
         <div className="w-full mt-6">
             <div className="flex justify-between items-center bg-neutral-900 border border-neutral-800 p-4 rounded-t-2xl">
                 <div className="flex items-center text-sm text-neutral-400">
-                    <Edit3 className="w-4 h-4 mr-2" /> Double-click any cell to manually edit before exporting. ({rowData.length} rows)
+                    <Edit3 className="w-4 h-4 mr-2" /> Double-click any cell to manually edit before exporting. {rowData.length < totalRows ? `(Previewing ${rowData.length} of ${totalRows} rows)` : `(${totalRows} rows)`}
                 </div>
                 <button onClick={handleDownload} className="flex items-center px-4 py-2 bg-green-500 text-black text-sm font-medium rounded-lg hover:bg-green-400 transition-colors">
                     <Download className="w-4 h-4 mr-2" /> Download Final CSV

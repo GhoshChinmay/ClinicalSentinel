@@ -66,7 +66,7 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
         safe_text_cols = []
         for col in string_cols:
-            if col in ["AI_Reason", "is_anomaly", "Threat_Score"]:
+            if col in ["AI_Reason", "is_anomaly", "Threat_Score", "SHAP_Payload"]:
                 continue
             try:
                 sample = df[col].drop_nulls()
@@ -113,11 +113,16 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
             pandas_df = df.to_pandas()
 
+            clean_mask = pandas_df["is_anomaly"] == False
+            anomaly_mask = pandas_df["is_anomaly"] == True
+
             for col in target_cols:
-                pandas_df.loc[pandas_df["is_anomaly"] == True, col] = np.nan
+                pandas_df.loc[anomaly_mask, col] = np.nan
 
             imputer = KNNImputer(n_neighbors=5, weights="distance")
-            pandas_df[target_cols] = imputer.fit_transform(pandas_df[target_cols])
+            imputer.fit(pandas_df.loc[clean_mask, target_cols])
+            
+            pandas_df.loc[anomaly_mask, target_cols] = imputer.transform(pandas_df.loc[anomaly_mask, target_cols])
 
             for col in target_cols:
                 df = df.with_columns(pl.Series(name=col, values=pandas_df[col]))
@@ -131,7 +136,7 @@ def clean_dataset(session_id: str, action: str = "drop"):
     engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
     engineered_prefixes = ("nlp_pc",)
     velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
-    always_drop = {"is_anomaly", "AI_Reason", "Threat_Score"}
+    always_drop = {"is_anomaly", "AI_Reason", "Threat_Score", "SHAP_Payload"}
 
     cols_to_drop = [
         c for c in cleaned_df.columns
@@ -141,6 +146,30 @@ def clean_dataset(session_id: str, action: str = "drop"):
         or c in velocity_names
     ]
     cleaned_df = cleaned_df.drop([c for c in cols_to_drop if c in cleaned_df.columns])
+
+    # ── GDPR PII SCRUBBER BEFORE EXPORT ──
+    try:
+        string_cols = [
+            col for col, dtype in zip(cleaned_df.columns, cleaned_df.dtypes)
+            if dtype in [pl.Utf8, getattr(pl, "String", pl.Utf8)]
+        ]
+        
+        pii_exprs = []
+        for col in string_cols:
+            expr = (
+                pl.col(col)
+                .str.replace_all(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[REDACTED_EMAIL]')
+                .str.replace_all(r'\b\d{3}-\d{2}-\d{4}\b', '[REDACTED_SSN]')
+                .str.replace_all(r'\b(?:\d[ -]*?){13,16}\b', '[REDACTED_CC]')
+                .alias(col)
+            )
+            pii_exprs.append(expr)
+            
+        if pii_exprs:
+            cleaned_df = cleaned_df.with_columns(pii_exprs)
+            logger.info("PII Scrubber applied to %d string columns.", len(string_cols))
+    except Exception as e:
+        logger.warning("Failed to run PII scrubber: %s", e)
 
     cleaned_parquet_path = f"{session_dir}/cleaned_data.parquet"
     cleaned_df.write_parquet(cleaned_parquet_path)

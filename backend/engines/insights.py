@@ -22,14 +22,16 @@ _ACTION_KEYS = [
 
 
 def _fuzzy_get(obj: dict, aliases: list) -> str:
-    """Search for a key in the dict using exact match, then partial/contains match."""
+    """Search for a key in the dict using exact match, then partial/contains match.
+    Only returns scalar string values — skips lists and nested dicts so the
+    recursive extractor can handle them properly."""
     for alias in aliases:
         for k, v in obj.items():
-            if k.lower() == alias and v is not None and str(v).strip():
+            if k.lower() == alias and v is not None and isinstance(v, (str, int, float, bool)) and str(v).strip():
                 return str(v).strip()
     for alias in aliases:
         for k, v in obj.items():
-            if alias in k.lower() and v is not None and str(v).strip():
+            if alias in k.lower() and v is not None and isinstance(v, (str, int, float, bool)) and str(v).strip():
                 return str(v).strip()
     return ""
 
@@ -48,48 +50,33 @@ def _extract_oia_insights(raw_data) -> list:
     Bulletproof recursive extractor that can dig OIA insight objects out of
     any arbitrarily nested structure the LLM might return.
     """
+    results = []
+    
     if isinstance(raw_data, list):
-        valid = []
         for item in raw_data:
-            if isinstance(item, dict):
-                if _is_oia_like(list(item.keys())):
-                    obs = _fuzzy_get(item, _OBSERVATION_KEYS)
-                    ins = _fuzzy_get(item, _INSIGHT_KEYS)
-                    act = _fuzzy_get(item, _ACTION_KEYS)
-                    if obs or ins:
-                        valid.append({
-                            "observation": obs or "Data pattern detected in the uploaded dataset.",
-                            "insight": ins or "This pattern may impact downstream analysis and model training accuracy.",
-                            "action": act or "Review the anomalies in the Detection tab and proceed to Cleaning for remediation.",
-                        })
-                    else:
-                        for v in item.values():
-                            valid.extend(_extract_oia_insights(v))
-                else:
-                    for v in item.values():
-                        valid.extend(_extract_oia_insights(v))
-            elif isinstance(item, list):
-                valid.extend(_extract_oia_insights(item))
-        return valid
-
-    if isinstance(raw_data, dict):
+            results.extend(_extract_oia_insights(item))
+            
+    elif isinstance(raw_data, dict):
+        # 1. Try to extract an OIA from this current dictionary level
         if _is_oia_like(list(raw_data.keys())):
             obs = _fuzzy_get(raw_data, _OBSERVATION_KEYS)
             ins = _fuzzy_get(raw_data, _INSIGHT_KEYS)
             act = _fuzzy_get(raw_data, _ACTION_KEYS)
+            
+            # Ensure it actually has scalar text values for the OIA
             if obs or ins:
-                return [{
+                results.append({
                     "observation": obs or "Data pattern detected in the uploaded dataset.",
                     "insight": ins or "This pattern may impact downstream analysis and model training accuracy.",
                     "action": act or "Review the anomalies in the Detection tab and proceed to Cleaning for remediation.",
-                }]
-
-        results = []
+                })
+                
+        # 2. Always recurse deeper in case there are nested OIA arrays or wrappers
         for v in raw_data.values():
-            results.extend(_extract_oia_insights(v))
-        return results
-
-    return []
+            if isinstance(v, (list, dict)):
+                results.extend(_extract_oia_insights(v))
+                
+    return results
 
 
 def _build_rich_context(df_raw: pl.DataFrame) -> str:
@@ -150,12 +137,15 @@ def generate_insights(session_id: str):
 
     context_block = _build_rich_context(df_raw)
 
-    prompt = f"""You are an elite Data Science Consultant. Analyze this dataset and provide exactly 3 critical insights.
+    prompt = f"""You are a senior data architect. Analyze this dataset profile and provide EXACTLY 3 distinct, high-value insights.
 
 {context_block}
 
-RESPOND WITH ONLY A RAW JSON ARRAY. No markdown, no explanation, no wrapper object.
-Use this exact schema:
+CRITICAL: You must provide exactly 3 insights. 
+Each must have an 'observation' (what), 'insight' (so what), and 'action' (now what).
+Respond ONLY with a JSON array of 3 objects.
+
+Example:
 [
   {{"observation": "...", "insight": "...", "action": "..."}},
   {{"observation": "...", "insight": "...", "action": "..."}},
@@ -166,26 +156,26 @@ Use this exact schema:
         """Guaranteed static OIA insights based on the actual data profile."""
         return [
             {
-                "observation": f"The anomaly detection engine flagged {anomaly_count} out of {total_rows} rows ({round(anomaly_count / max(total_rows, 1) * 100, 1)}%) as statistically anomalous.",
-                "insight": "These outliers will disproportionately skew aggregate statistics (mean, variance) and degrade the performance of downstream ML models if left untreated.",
-                "action": "Navigate to the Cleaning tab and select 'Quarantine' to safely isolate these rows into a forensic vault without permanently deleting them.",
+                "observation": f"The anomaly engine flagged {anomaly_count} out of {total_rows} rows as statistically anomalous.",
+                "insight": "These outliers represent high-risk data points that could skew aggregate metrics and degrade downstream model accuracy.",
+                "action": "Proceed to the 'Cleaning' step and use 'Quarantine' to isolate all flagged records into a secure storage container.",
             },
             {
-                "observation": f"The dataset contains {len(columns)} distinct features spanning numeric, categorical, and potentially temporal dimensions.",
-                "insight": "High dimensionality increases the risk of the 'curse of dimensionality' — models struggle to find signal in noisy, wide datasets. Correlated features also inflate model complexity.",
-                "action": "Use the Visualizer tab to inspect the correlation heatmap and identify redundant or highly correlated features that can be safely dropped before modeling.",
+                "observation": f"Dataset contains {len(columns)} dimensions with a mix of data types and potential correlations.",
+                "insight": "Redundant or highly correlated features increase computational overhead and can lead to model overfitting.",
+                "action": "Use the 'Visualizer' correlation matrix to identify and prune redundant features before moving to production.",
             },
             {
-                "observation": f"Data profiling across all {total_rows} rows completed successfully. The schema includes columns: {', '.join(columns[:6])}{'...' if len(columns) > 6 else ''}.",
-                "insight": "Proper schema validation and anomaly isolation before modeling ensures that your training pipeline receives clean, statistically sound inputs — directly improving accuracy and reducing false positives.",
-                "action": "After cleaning, export the sanitized CSV from the Edit tab to ensure all engineered features are stripped and only original columns remain in the final output.",
+                "observation": "Baseline data profiling and schema validation for this session is complete and secure.",
+                "insight": "Maintaining a clean data contract ensures that your transformation pipeline remains resilient against drift.",
+                "action": "Review the final 'Quality Report' to verify that all data governance standards are met for this dataset.",
             },
         ]
 
     try:
         response = requests.post(
             "http://localhost:11434/api/generate",
-            json={"model": "phi3", "prompt": prompt, "format": "json", "stream": False},
+            json={"model": os.getenv("OLLAMA_MODEL", "llama3"), "prompt": prompt, "format": "json", "stream": False},
             timeout=120,
         )
 
@@ -195,17 +185,30 @@ Use this exact schema:
 
             if "```" in response_text:
                 response_text = re.sub(r"```(?:json)?\s*", "", response_text)
-                response_text = response_text.strip()
+                response_text = response_text.replace("```", "").strip()
 
             parsed = json.loads(response_text)
             insights_list = _extract_oia_insights(parsed)
 
-            if insights_list and len(insights_list) > 0:
-                logger.info("Successfully extracted %d OIA insights.", len(insights_list))
-                return {"insights": insights_list}
-            else:
-                logger.info("LLM returned valid JSON but no OIA objects found. Using fallback.")
+            # Ensure we always return exactly 3 insights by padding with fallbacks if needed
+            if not insights_list:
                 return {"insights": _build_fallback()}
+            
+            if len(insights_list) < 3:
+                fallbacks = _build_fallback()
+                # Don't duplicate if fallback observation is already similar to what we got
+                for fb in fallbacks:
+                    if len(insights_list) >= 3:
+                        break
+                    # Simple check to avoid exact duplicates
+                    if not any(fb["observation"][:20] in i.get("observation", "") for i in insights_list):
+                        insights_list.append(fb)
+                
+                # If still less than 3 (rare), just force add them
+                while len(insights_list) < 3:
+                    insights_list.append(fallbacks[len(insights_list)])
+
+            return {"insights": insights_list[:3]}
         else:
             raise Exception(f"Local LLM returned status {response.status_code}")
 

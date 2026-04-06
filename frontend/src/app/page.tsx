@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, Database, Loader2, ShieldCheck, Trash2, Edit, BarChart, Brain, Terminal, AlertOctagon, XCircle, X, ArrowRight } from "lucide-react";
+import { UploadCloud, Loader2, ShieldCheck, Trash2, Edit, BarChart, Brain, Terminal, AlertOctagon, XCircle, X, ArrowRight, FileCheck } from "lucide-react";
 import api from "@/lib/api";
 import type { UploadResponse } from "@/types/api";
 
@@ -14,9 +14,10 @@ import Visualizer from "../components/Visualizer";
 import Insights from "../components/Insights";
 import Query from "../components/Query";
 import Compare from "../components/Compare";
+import ExportReport from "../components/ExportReport";
 
 // Define the stages of our pipeline
-type PipelineStep = 'upload' | 'detect' | 'insights' | 'clean' | 'compare' | 'edit' | 'visualize' | 'query';
+type PipelineStep = 'upload' | 'detect' | 'insights' | 'clean' | 'compare' | 'edit' | 'visualize' | 'query' | 'report';
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState<PipelineStep>('upload');
@@ -37,6 +38,13 @@ export default function Home() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- NEW: Sample Library ---
+  const [samples, setSamples] = useState<Array<{filename: string, name: string, rows: number, anomalies: number, description: string, icon: string}>>([]);
+
+  useEffect(() => {
+    api.get('/api/samples').then(res => setSamples(res.data.samples)).catch(console.error);
+  }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -65,13 +73,59 @@ export default function Home() {
       // Automatically move to the detection phase once uploaded
       setCurrentStep('detect');
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { detail?: { message?: string; errors?: string[] } | string } }; message?: string };
-      // Catch the Gatekeeper Schema Enforcement error
-      const detail = axiosErr.response?.data?.detail;
-      if (axiosErr.response?.status === 400 && detail && typeof detail === "object" && (detail as { message?: string }).message === "Data Quality Contract Failed") {
-        setContractErrors((detail as { errors: string[] }).errors);
+      const axiosErr = err as {
+        response?: {
+          status?: number;
+          data?: {
+            status?: string;
+            errors?: string[];
+            error?: string;
+          };
+        };
+        message?: string;
+      };
+
+      const respData = axiosErr.response?.data;
+
+      if (axiosErr.response?.status === 400 && respData?.errors?.length) {
+        // Schema validation errors from SchemaEnforcer
+        setContractErrors(respData.errors);
       } else {
-        const errorMessage = (typeof detail === "string" ? detail : null) || axiosErr.message || "Unknown error occurred";
+        const errorMessage = respData?.error || axiosErr.message || "Unknown error occurred";
+        console.error("Upload Error Details:", errorMessage);
+        setUploadError(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
+      }
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const loadSample = async (filename: string) => {
+    setIsUploading(true);
+    setUploadError(null);
+    setContractErrors(null);
+    try {
+      const response = await api.post<UploadResponse>(`/api/load-sample/${filename}`);
+      setSessionId(response.data.session_id);
+      setCachedInsights(null);
+      setRecommendedMethod(response.data.recommended_cleaning || 'quarantine');
+      setCleaningRationale(response.data.cleaning_rationale || '');
+      setCurrentStep('detect');
+    } catch (err: unknown) {
+      const axiosErr = err as {
+        response?: {
+          status?: number;
+          data?: { status?: string; errors?: string[]; error?: string; };
+        };
+        message?: string;
+      };
+
+      const respData = axiosErr.response?.data;
+
+      if (axiosErr.response?.status === 400 && respData?.errors?.length) {
+        setContractErrors(respData.errors);
+      } else {
+        const errorMessage = respData?.error || axiosErr.message || "Unknown error occurred";
         console.error("Upload Error Details:", errorMessage);
         setUploadError(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
       }
@@ -91,7 +145,8 @@ export default function Home() {
       { id: 'compare', icon: <ArrowRight size={16} />, label: 'Compare' },
       { id: 'edit', icon: <Edit size={16} />, label: 'Edit' },
       { id: 'visualize', icon: <BarChart size={16} />, label: 'Visualizer' },
-      { id: 'query', icon: <Terminal size={16} />, label: 'Query' }
+      { id: 'query', icon: <Terminal size={16} />, label: 'Query' },
+      { id: 'report', icon: <FileCheck size={16} />, label: 'Quality Export' }
     ];
 
     return (
@@ -134,7 +189,7 @@ export default function Home() {
                 className="w-full border-2 border-dashed border-neutral-800 bg-neutral-900/40 hover:bg-neutral-900/80 rounded-3xl p-16 transition-all duration-300 flex flex-col items-center justify-center cursor-pointer group"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <input type="file" className="hidden" accept=".csv" ref={fileInputRef} onChange={handleFileChange} />
+                <input type="file" className="hidden" accept=".csv,.xlsx,.xls,.json" ref={fileInputRef} onChange={handleFileChange} />
 
                 {isUploading ? (
                   <div className="flex flex-col items-center text-blue-400">
@@ -146,8 +201,13 @@ export default function Home() {
                     <div className="p-5 bg-white text-black rounded-full mb-6 shadow-xl">
                       <UploadCloud className="w-8 h-8" />
                     </div>
-                    <p className="text-xl font-bold mb-2">Select Dataset</p>
-                    <p className="text-sm text-neutral-500">Supports CSV files up to 100MB</p>
+                    <p className="text-xl font-bold mb-2">Upload Dataset</p>
+                    <div className="flex gap-2 justify-center mb-2">
+                      <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-bold font-mono">.CSV</span>
+                      <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs font-bold font-mono">.XLSX</span>
+                      <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded text-xs font-bold font-mono">.JSON</span>
+                    </div>
+                    <p className="text-sm text-neutral-500">Max size: 100MB</p>
                   </div>
                 )}
               </div>
@@ -161,6 +221,40 @@ export default function Home() {
                     <p className="text-sm text-red-300/80">{uploadError}</p>
                   </div>
                   <button onClick={() => setUploadError(null)} className="ml-4 text-red-400 hover:text-white"><X className="w-4 h-4" /></button>
+                </div>
+              )}
+
+              {/* NEW: Sample Datasets */}
+              {samples.length > 0 && (
+                <div className="w-full mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  <div className="flex justify-between items-end mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold">Sample Library</h3>
+                      <p className="text-sm text-neutral-500">Try DataSentinel with pre-engineered test cases.</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {samples.map((sample) => (
+                      <div
+                        key={sample.filename}
+                        className="bg-neutral-900/40 hover:bg-neutral-800/80 border border-neutral-800 p-4 rounded-2xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 group relative overflow-hidden"
+                        onClick={() => loadSample(sample.filename)}
+                      >
+                        {/* Highlight effect */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        
+                        <div className="flex justify-between items-start mb-3 relative z-10">
+                          <span className="text-2xl">{sample.icon}</span>
+                          <div className="flex flex-col items-end">
+                            <span className="text-xs font-mono text-neutral-500">{sample.rows.toLocaleString()} rows</span>
+                            <span className="text-xs font-mono text-red-500">{sample.anomalies.toLocaleString()} anomalies</span>
+                          </div>
+                        </div>
+                        <h4 className="font-bold text-sm mb-1 relative z-10">{sample.name}</h4>
+                        <p className="text-xs text-neutral-400 line-clamp-2 relative z-10">{sample.description}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </motion.div>
@@ -268,6 +362,19 @@ export default function Home() {
                 <p className="text-neutral-400">Ask complex questions in English and watch the AI execute them instantly.</p>
               </div>
               {sessionId && <Query key={sessionId} sessionId={sessionId} />}
+
+              <div className="mt-8 flex justify-end">
+                <button onClick={() => setCurrentStep('report')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
+                  Final Quality Report &rarr;
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 9: REPORT & EXPORT */}
+          {currentStep === 'report' && (
+            <motion.div key="report" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
+              {sessionId && <ExportReport key={sessionId} sessionId={sessionId} />}
             </motion.div>
           )}
 

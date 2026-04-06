@@ -71,13 +71,18 @@ def get_viz_data(session_id: str):
     df_raw = pl.read_parquet(raw_path)
     df_clean = pl.read_parquet(clean_path) if os.path.exists(clean_path) else None
 
-    internal_cols = ["is_anomaly", "Threat_Score", "Class"]
+    internal_cols = ["is_anomaly", "Threat_Score", "Class", "AI_Reason"]
+    engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+    engineered_prefixes = ("nlp_pc",)
+    velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
 
     numeric_cols = []
     categorical_cols = []
 
     for c, d in zip(df_raw.columns, df_raw.dtypes):
-        if c in internal_cols:
+        if c in internal_cols or c in velocity_names:
+            continue
+        if c.endswith(engineered_suffixes) or any(c.startswith(p) for p in engineered_prefixes):
             continue
         if df_clean is not None and c not in df_clean.columns:
             continue

@@ -39,7 +39,7 @@ def process_and_detect(
                 pandas_fallback = pd.read_csv(file_path, low_memory=False)
                 df = pl.from_pandas(pandas_fallback)
             except Exception as inner_e:
-                return {"error": f"Fatal Read Error. Both engines failed to parse the CSV: {str(inner_e)}"}
+                print('END DETECTION', time.time()); return {"error": f"Fatal Read Error. Both engines failed to parse the CSV: {str(inner_e)}"}
 
     df = df.unique()
 
@@ -165,7 +165,7 @@ def process_and_detect(
 
     # --- SHAP EXPLAINABILITY LAYER ---
     try:
-        logger.info("Computing SHAP values for anomaly attribution...")
+        print('START SHAP', time.time()); logger.info('Computing SHAP values')
         explainer = shap.TreeExplainer(model)
         
         anomaly_indices = [i for i, x in enumerate(is_anomaly) if x]
@@ -173,7 +173,10 @@ def process_and_detect(
         shap_payloads = ["[]"] * len(pandas_df)
 
         if anomaly_indices:
-            # Removed optimization cap: user wants all anomalies to have full feature reasoning
+            # OPTIMIZATION: Cap SHAP computation to top 500 most severe anomalies
+            if len(anomaly_indices) > 500:
+                top_500_idx = np.argsort(inverted_scores)[-500:][::-1]
+                anomaly_indices = [i for i in top_500_idx if is_anomaly[i]]
 
             anom_encoded_df = encoded_df.iloc[anomaly_indices]
             shap_vals = explainer.shap_values(anom_encoded_df)
@@ -192,13 +195,13 @@ def process_and_detect(
                 shap_payloads[orig_idx] = json.dumps(contributions)
 
         df = df.with_columns(pl.Series(name="SHAP_Payload", values=shap_payloads))
-        logger.info("SHAP attribution successfully embedded.")
+        print('END SHAP', time.time()); logger.info('SHAP embedded.')
     except Exception as e:
         logger.warning("SHAP attribution failed: %s", e)
         df = df.with_columns(pl.Series(name="SHAP_Payload", values=["[]"] * len(pandas_df)))
 
     # --- TIER 2 THREAT ENGINE (SUPERVISED OR SYNTHETIC) ---
-    if "Class" in pandas_df.columns:
+    print('START THREAT', time.time()); if "Class" in pandas_df.columns:
         try:
             X = encoded_df.drop(columns=["Class"]) if "Class" in encoded_df.columns else encoded_df
             y = pandas_df["Class"].fillna(0)
@@ -245,8 +248,6 @@ def process_and_detect(
             logger.warning("Synthetic Engine failed: %s", e)
             df = df.with_columns(pl.Series(name="Threat_Score", values=[0] * len(pandas_df)))
 
-    logger.info("FINISHED THREAT ENGINE")
-
     # --- AI REASON GENERATOR ---
     engineered_suffixes = ("_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
     engineered_prefixes = ("nlp_pc",)
@@ -278,7 +279,10 @@ def process_and_detect(
 
         anomaly_indices = [i for i, x in enumerate(is_anomaly) if x]
         
-        # Removing optimization cap: the user specifically requested every single anomaly to have reasoning.
+        # OPTIMIZATION: Cap AI reasons computation to top 500 most severe anomalies
+        if len(anomaly_indices) > 500:
+            top_500_idx = np.argsort(inverted_scores)[-500:][::-1]
+            anomaly_indices = [i for i in top_500_idx if is_anomaly[i]]
 
         for idx in anomaly_indices:
             row = pandas_df.iloc[idx]
@@ -313,8 +317,7 @@ def process_and_detect(
 
             reasons_list[idx] = " | ".join(reasons[:3])
 
-    df = df.with_columns(pl.Series(name="AI_Reason", values=reasons_list))
-    logger.info("FINISHED REASON GENERATOR")
+    print('START AI REASON', time.time()); df = df.with_columns(pl.Series(name="AI_Reason", values=reasons_list))
     raw_parquet_path = f"{session_dir}/raw_data.parquet"
     df.write_parquet(raw_parquet_path)
 
@@ -346,7 +349,7 @@ def process_and_detect(
         recommended_cleaning = "quarantine"
         cleaning_rationale = "Generic dataset detected. 'Quarantine' is the safest default action. It moves anomalous rows to a secure vault while keeping your main dataset perfectly clean."
 
-    return {
+    print('END DETECTION', time.time()); return {
         "status": "success",
         "session_id": session_id,
         "total_rows": len(df),

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import type { AnomalyRow, SessionDataResponse } from '@/types/api';
 import { motion } from 'framer-motion';
-import { ShieldAlert, CheckCircle, FileWarning, AlertTriangle, AlertCircle, Crosshair } from 'lucide-react';
+import { ShieldAlert, CheckCircle, FileWarning, AlertTriangle, AlertCircle, Crosshair, Activity, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 export default function Detection({ sessionId }: { sessionId: string }) {
     const [data, setData] = useState<AnomalyRow[]>([]);
@@ -12,6 +12,22 @@ export default function Detection({ sessionId }: { sessionId: string }) {
 
     // NEW: Slider State
     const [threshold, setThreshold] = useState<number>(0);
+
+    // NEW: Feedback State
+    const [feedbackMap, setFeedbackMap] = useState<Record<number, 'correct' | 'incorrect'>>({});
+
+    const handleFeedback = async (row: AnomalyRow, idx: number, isCorrect: boolean) => {
+        try {
+            await api.post('/api/feedback/', {
+                session_id: sessionId,
+                row_data: row,
+                is_correct: isCorrect
+            });
+            setFeedbackMap(prev => ({ ...prev, [idx]: isCorrect ? 'correct' : 'incorrect' }));
+        } catch (e) {
+            console.error("Failed to submit feedback", e);
+        }
+    };
 
     useEffect(() => {
         if (!sessionId) {
@@ -63,7 +79,7 @@ export default function Detection({ sessionId }: { sessionId: string }) {
     const displayData = data.filter(row => {
         if (row.Threat_Score === undefined || row.Threat_Score === null) return true;
         return row.Threat_Score >= threshold;
-    });
+    }).slice(0, 100);
 
     // Check if the dataset is capable of Threat Scoring (has ML output > 0)
     const hasThreatScores = data.length > 0 && data.some(r => r.Threat_Score && r.Threat_Score > 0);
@@ -90,7 +106,7 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                                 <Crosshair className="w-4 h-4 mr-2 text-blue-500" />
                                 Threat Score Strictness
                             </h4>
-                            <p className="text-xs text-neutral-400 mt-1">Filter the visible anomalies based on the Supervised Classifier's confidence score.</p>
+                            <p className="text-xs text-neutral-400 mt-1">Filter the visible anomalies based on the Supervised Classifier&apos;s confidence score.</p>
                         </div>
                         <div className="text-right">
                             <span className="text-2xl font-black text-blue-500">{threshold}%</span>
@@ -133,7 +149,16 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                             </thead>
                             <tbody className="divide-y divide-neutral-800">
                                 {displayData.map((row, idx) => {
-                                    const { is_anomaly: _a, AI_Reason: _b, Threat_Score: _c, ...rowData } = row;
+                                    const { is_anomaly: _a, AI_Reason: _b, Threat_Score: _c, SHAP_Payload: _d, ...rowData } = row;
+
+                                    let shapData: Array<{ feature: string; impact: number }> | null = null;
+                                    try {
+                                        if (row.SHAP_Payload) {
+                                            shapData = JSON.parse(row.SHAP_Payload);
+                                        }
+                                    } catch (e) {
+                                        // Ignore parse error
+                                    }
 
                                     return (
                                         <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }} key={idx} className="hover:bg-neutral-900/50">
@@ -165,6 +190,61 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                                                             Threat Score: {row.Threat_Score}%
                                                         </div>
                                                     )}
+
+                                                    {/* NEW: SHAP Feature Attribution Panel */}
+                                                    {shapData && shapData.length > 0 && (
+                                                        <div className="mt-2 bg-black/40 border border-neutral-800/60 rounded-lg p-3">
+                                                            <h5 className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center">
+                                                                <Activity className="w-3 h-3 mr-1 text-purple-400" />
+                                                                SHAP Feature Attribution
+                                                            </h5>
+                                                            <div className="space-y-2">
+                                                                {shapData.map((shap, sIdx) => {
+                                                                    const isPositive = shap.impact > 0;
+                                                                    // Normalize width for basic UI display (limit to between 5% and 100%)
+                                                                    const width = Math.min(Math.max(Math.abs(shap.impact) * 100, 5), 100);
+                                                                    return (
+                                                                        <div key={sIdx} className="flex flex-col">
+                                                                            <div className="flex justify-between text-xs mb-1">
+                                                                                <span className="text-neutral-300 font-mono">{shap.feature}</span>
+                                                                                <span className={`font-mono ${isPositive ? 'text-red-400' : 'text-blue-400'}`}>
+                                                                                    {isPositive ? '+' : ''}{shap.impact.toFixed(3)}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="w-full bg-neutral-900 rounded-full h-1.5 overflow-hidden flex">
+                                                                                <div 
+                                                                                    className={`h-full rounded-full ${isPositive ? 'bg-red-500/80' : 'bg-blue-500/80'}`}
+                                                                                    style={{ width: `${width}%` }} 
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Active Learning Feedback Buttons */}
+                                                    <div className="mt-4 flex items-center space-x-2 border-t border-neutral-800/60 pt-3">
+                                                        <span className="text-[10px] uppercase font-bold text-neutral-500 mr-2">Was this correct?</span>
+                                                        <button 
+                                                            onClick={() => handleFeedback(row, idx, true)}
+                                                            disabled={feedbackMap[idx] !== undefined}
+                                                            className={`flex items-center px-2 py-1 space-x-1 rounded text-[10px] font-bold border transition-colors ${feedbackMap[idx] === 'correct' ? 'bg-green-500/20 text-green-400 border-green-500/50' : feedbackMap[idx] === 'incorrect' ? 'opacity-50 cursor-not-allowed bg-black text-neutral-600 border-neutral-800' : 'bg-black text-neutral-400 border-neutral-800 hover:text-green-400 hover:border-green-500/50'}`}
+                                                        >
+                                                            <ThumbsUp className="w-3 h-3" />
+                                                            <span>Yes</span>
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleFeedback(row, idx, false)}
+                                                            disabled={feedbackMap[idx] !== undefined}
+                                                            className={`flex items-center px-2 py-1 space-x-1 rounded text-[10px] font-bold border transition-colors ${feedbackMap[idx] === 'incorrect' ? 'bg-red-500/20 text-red-400 border-red-500/50' : feedbackMap[idx] === 'correct' ? 'opacity-50 cursor-not-allowed bg-black text-neutral-600 border-neutral-800' : 'bg-black text-neutral-400 border-neutral-800 hover:text-red-400 hover:border-red-500/50'}`}
+                                                        >
+                                                            <ThumbsDown className="w-3 h-3" />
+                                                            <span>No</span>
+                                                        </button>
+                                                    </div>
+
                                                 </div>
                                             </td>
                                         </motion.tr>

@@ -167,7 +167,7 @@ def confirm_and_execute_edit(session_id: str, sql_query: str):
                 rows_affected = len(affected_df)
             except Exception:
                 con.execute(clean_sql)
-                rows_affected = con.execute("SELECT changes()").fetchone()[0]
+                rows_affected = 0
                 affected_df = con.query("SELECT * FROM my_table LIMIT 50").pl()
 
             con.execute(f"COPY my_table TO '{data_path}' (FORMAT PARQUET)")

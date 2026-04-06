@@ -18,6 +18,7 @@ export interface AnomalyRow {
   is_anomaly: boolean;
   AI_Reason: string;
   Threat_Score: number;
+  SHAP_Payload?: string;
   [key: string]: unknown;
 }
 

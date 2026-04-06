@@ -4,10 +4,21 @@ API routes, file upload handling, and session management.
 """
 
 import os
+
+# Bypass Loky/Joblib CPU counting bug on Windows that causes ValueError: 0 physical cores < 1
+os.environ["LOKY_MAX_CPU_COUNT"] = "4"
+# Prevent OpenMP and BLAS from spawning hundreds of threads, which deadlocks Polars on Windows
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import polars as pl
 from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 
 from utils import _session_dir, _BACKEND_DIR, logger, validate_session_id, cleanup_stale_sessions
 from schema import SchemaEnforcer
@@ -18,9 +29,24 @@ from engines import (
     generate_insights,
     execute_natural_query,
     confirm_and_execute_edit,
+    generate_quality_report
 )
 
 app = FastAPI()
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    row_data: dict
+    is_correct: bool
+
+@app.post("/api/feedback/")
+def submit_feedback(payload: FeedbackRequest):
+    import json
+    feedback_file = os.path.join(_BACKEND_DIR, "data", "feedback.jsonl")
+    os.makedirs(os.path.dirname(feedback_file), exist_ok=True)
+    with open(feedback_file, "a") as f:
+        f.write(json.dumps(payload.dict()) + "\n")
+    return {"status": "success"}
 
 # --- CORS: environment-based whitelist instead of wildcard ---
 _ALLOWED_ORIGINS = os.getenv(
@@ -55,14 +81,59 @@ async def upload_csv(file: UploadFile = File(...)):
         with open(temp_file_path, "wb") as f:
             f.write(contents)
 
-        # --- SCHEMA VALIDATION ---
-        try:
-            df = pl.read_csv(temp_file_path, infer_schema_length=1000000)
-        except Exception:
-            import pandas as pd
-            df = pl.from_pandas(pd.read_csv(temp_file_path, low_memory=False))
+        # ── MULTI-FORMAT PARSER ──────────────────────────────────────────────
+        filename_lower = file.filename.lower()
+        df = None
 
-        validation = SchemaEnforcer.validate(df)
+        if filename_lower.endswith((".xlsx", ".xls")):
+            try:
+                import pandas as pd
+                pandas_df = pd.read_excel(temp_file_path, engine="openpyxl")
+                df = pl.from_pandas(pandas_df)
+                logger.info("Parsed Excel file: %s", file.filename)
+            except Exception as e:
+                return JSONResponse(status_code=400, content={
+                    "error": f"Excel parse failed: {str(e)}"
+                })
+
+        elif filename_lower.endswith(".json"):
+            try:
+                import json
+                import pandas as pd
+                with open(temp_file_path, "r") as jf:
+                    raw = json.load(jf)
+                if isinstance(raw, list):
+                    df = pl.from_pandas(pd.DataFrame(raw))
+                elif isinstance(raw, dict):
+                    # Try common wrappers: {"data": [...]}
+                    for key in ["data", "records", "rows", "items"]:
+                        if key in raw and isinstance(raw[key], list):
+                            df = pl.from_pandas(pd.DataFrame(raw[key]))
+                            break
+                if df is None:
+                    return JSONResponse(status_code=400, content={
+                        "error": "JSON must be an array of objects or {data: [...]}."
+                    })
+                logger.info("Parsed JSON file: %s", file.filename)
+            except Exception as e:
+                return JSONResponse(status_code=400, content={
+                    "error": f"JSON parse failed: {str(e)}"
+                })
+
+        else:
+            # Default: CSV with resilient fallback
+            try:
+                df = pl.read_csv(temp_file_path, infer_schema_length=1_000_000)
+            except Exception:
+                try:
+                    import pandas as pd
+                    df = pl.from_pandas(pd.read_csv(temp_file_path, low_memory=False))
+                except Exception as inner_e:
+                    return JSONResponse(status_code=500, content={
+                        "error": f"Fatal read error: {str(inner_e)}"
+                    })
+
+        validation = SchemaEnforcer.validate(df, dataset_name=file.filename)
         if not validation["valid"]:
             return JSONResponse(
                 status_code=400,
@@ -86,6 +157,7 @@ def get_data(
     session_id: str,
     is_cleaned: bool = Query(False),
     only_anomalies: bool = Query(False),
+    limit: int = Query(1000),
 ):
     try:
         validate_session_id(session_id)
@@ -107,13 +179,24 @@ def get_data(
     total_anomalies = 0
     if "is_anomaly" in df.columns:
         anomalies = df.filter(pl.col("is_anomaly") == True)
+        
+        # Sort anomalies by Threat_Score descending so that the top severe ones (which have SHAP/AI reasoning) appear first on the UI
+        if "Threat_Score" in anomalies.columns:
+            anomalies = anomalies.sort("Threat_Score", descending=True)
+            
         total_anomalies = len(anomalies)
         if only_anomalies:
             df = anomalies
 
+    # Prevent out of memory errors by capping json payload
+    total_rows = len(df)
+    if total_rows > limit:
+        df = df.head(limit)
+
     return {
         "data": df.to_dicts(),
         "total_anomalies": total_anomalies,
+        "total_rows": total_rows, # To let frontend know actual count
     }
 
 
@@ -196,6 +279,18 @@ def insights(session_id: str):
         return JSONResponse(status_code=400, content=result)
     return result
 
+@app.get("/api/report/{session_id}")
+def report(session_id: str):
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    result = generate_quality_report(session_id)
+    if "error" in result:
+        return JSONResponse(status_code=400, content=result)
+    return result
+
 
 @app.get("/api/download/{session_id}")
 def download_data(session_id: str, source: str = Query("cleaned")):
@@ -231,7 +326,7 @@ def download_data(session_id: str, source: str = Query("cleaned")):
 
 
 @app.get("/api/quarantine/{session_id}")
-def get_quarantine(session_id: str):
+def get_quarantine(session_id: str, limit: int = Query(1000)):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -244,7 +339,12 @@ def get_quarantine(session_id: str):
         return {"data": [], "count": 0}
 
     df = pl.read_parquet(quarantine_path)
-    return {"data": df.to_dicts(), "count": len(df)}
+    total_count = len(df)
+    
+    if total_count > limit:
+        df = df.head(limit)
+        
+    return {"data": df.to_dicts(), "count": total_count}
 
 
 @app.post("/api/query/{session_id}")
@@ -272,3 +372,64 @@ def confirm_edit(session_id: str, sql_query: str = Query(...)):
     if "error" in result:
         return JSONResponse(status_code=400, content=result)
     return result
+
+
+@app.get("/api/samples")
+def list_samples():
+    """Returns available built-in sample datasets."""
+    data_dir = os.path.join(_BACKEND_DIR, "data")
+    samples = []
+    descriptions = {
+        "fraud_transactions.csv": {
+            "name": "Financial Fraud Transactions",
+            "rows": 500,
+            "anomalies": 25,
+            "description": "Synthetic bank transactions with offshore fraud patterns.",
+            "icon": "💳",
+        },
+        "patient_vitals.csv": {
+            "name": "Patient Vitals Monitor",
+            "rows": 300,
+            "anomalies": 15,
+            "description": "ICU sensor readings with equipment glitch anomalies.",
+            "icon": "🏥",
+        },
+        "ecommerce_reviews.csv": {
+            "name": "E-Commerce Reviews",
+            "rows": 400,
+            "anomalies": 20,
+            "description": "Product reviews with bot-generated spam injected.",
+            "icon": "🛒",
+        },
+    }
+    for fname, meta in descriptions.items():
+        fpath = os.path.join(data_dir, fname)
+        if os.path.exists(fpath):
+            samples.append({**meta, "filename": fname})
+    return {"samples": samples}
+
+
+@app.post("/api/load-sample/{filename}")
+async def load_sample(filename: str):
+    """Loads a built-in sample dataset through the full detection pipeline."""
+    # Sanitise filename — only allow known files
+    allowed = {"fraud_transactions.csv", "patient_vitals.csv", "ecommerce_reviews.csv"}
+    if filename not in allowed:
+        return JSONResponse(status_code=400, content={"error": "Unknown sample file."})
+    
+    data_dir = os.path.join(_BACKEND_DIR, "data")
+    file_path = os.path.join(data_dir, filename)
+    
+    if not os.path.exists(file_path):
+        return JSONResponse(status_code=404, content={"error": "Sample not found."})
+    
+    try:
+        df = pl.read_csv(file_path, infer_schema_length=1_000_000)
+        validation = SchemaEnforcer.validate(df, dataset_name=filename)
+        if not validation["valid"]:
+            return JSONResponse(status_code=400, content={"errors": validation["errors"]})
+        result = process_and_detect(df=df, file_path=file_path)
+        return result
+    except Exception as e:
+        logger.error("Sample load failed: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
