@@ -5,23 +5,31 @@ API routes, file upload handling, and session management.
 
 import os
 
+# Load .env file before anything else reads environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
 # Bypass Loky/Joblib CPU counting bug on Windows that causes ValueError: 0 physical cores < 1
-os.environ["LOKY_MAX_CPU_COUNT"] = "4"
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "4")
 # Prevent OpenMP and BLAS from spawning hundreds of threads, which deadlocks Polars on Windows
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 import polars as pl
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from utils import _session_dir, _BACKEND_DIR, logger, validate_session_id, cleanup_stale_sessions
 from schema import SchemaEnforcer
+from auth import require_api_key, is_auth_enabled
 from engines import (
     process_and_detect,
     clean_dataset,
@@ -32,15 +40,26 @@ from engines import (
     generate_quality_report
 )
 
+# --- RATE LIMITER (in-memory, per-IP) ----------------------------------------
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+logger.info(
+    "Auth: %s | Rate limiting: enabled",
+    "ENABLED (DS_API_KEY is set)" if is_auth_enabled() else "DISABLED (no DS_API_KEY)",
+)
 
 class FeedbackRequest(BaseModel):
     session_id: str
     row_data: dict
     is_correct: bool
 
-@app.post("/api/feedback/")
-def submit_feedback(payload: FeedbackRequest):
+@app.post("/api/feedback/", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
+def submit_feedback(request: Request, payload: FeedbackRequest):
     import json
     feedback_file = os.path.join(_BACKEND_DIR, "data", "feedback.jsonl")
     os.makedirs(os.path.dirname(feedback_file), exist_ok=True)
@@ -88,8 +107,9 @@ def health_check():
         return {"ollama": False, "models": []}
 
 
-@app.post("/api/upload/")
-async def upload_csv(file: UploadFile = File(...)):
+@app.post("/api/upload/", dependencies=[Depends(require_api_key)])
+@limiter.limit("10/minute")
+async def upload_csv(request: Request, file: UploadFile = File(...)):
     # Clean up stale sessions (>24h old) instead of nuking everything
     cleanup_stale_sessions(max_age_hours=24)
 
@@ -182,8 +202,10 @@ async def upload_csv(file: UploadFile = File(...)):
             os.remove(temp_file_path)
 
 
-@app.get("/api/data/{session_id}")
+@app.get("/api/data/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
 def get_data(
+    request: Request,
     session_id: str,
     is_cleaned: bool = Query(False),
     only_anomalies: bool = Query(False),
@@ -230,8 +252,9 @@ def get_data(
     }
 
 
-@app.post("/api/clean/{session_id}")
-def clean_data(session_id: str, action: str = Query("drop")):
+@app.post("/api/clean/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
+def clean_data(request: Request, session_id: str, action: str = Query("drop")):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -243,8 +266,9 @@ def clean_data(session_id: str, action: str = Query("drop")):
     return result
 
 
-@app.get("/api/compare/{session_id}")
-def compare_data(session_id: str):
+@app.get("/api/compare/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
+def compare_data(request: Request, session_id: str):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -287,8 +311,9 @@ def compare_data(session_id: str):
     }
 
 
-@app.get("/api/viz/{session_id}")
-def viz_data(session_id: str):
+@app.get("/api/viz/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
+def viz_data(request: Request, session_id: str):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -300,8 +325,9 @@ def viz_data(session_id: str):
     return result
 
 
-@app.get("/api/insights/{session_id}")
-def insights(session_id: str):
+@app.get("/api/insights/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("20/minute")
+def insights(request: Request, session_id: str):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -312,8 +338,9 @@ def insights(session_id: str):
         return JSONResponse(status_code=400, content=result)
     return result
 
-@app.get("/api/report/{session_id}")
-def report(session_id: str):
+@app.get("/api/report/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("20/minute")
+def report(request: Request, session_id: str):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -325,8 +352,9 @@ def report(session_id: str):
     return result
 
 
-@app.get("/api/download/{session_id}")
-def download_data(session_id: str, source: str = Query("cleaned")):
+@app.get("/api/download/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
+def download_data(request: Request, session_id: str, source: str = Query("cleaned")):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -367,8 +395,9 @@ def download_data(session_id: str, source: str = Query("cleaned")):
     return FileResponse(path=csv_path, media_type="text/csv", filename=csv_filename)
 
 
-@app.get("/api/quarantine/{session_id}")
-def get_quarantine(session_id: str, limit: int = Query(1000)):
+@app.get("/api/quarantine/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
+def get_quarantine(request: Request, session_id: str, limit: int = Query(1000)):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -389,8 +418,9 @@ def get_quarantine(session_id: str, limit: int = Query(1000)):
     return {"data": df.to_dicts(), "count": total_count}
 
 
-@app.post("/api/query/{session_id}")
-def query_data(session_id: str, user_query: str = Query(...), mode: str = Query("explore")):
+@app.post("/api/query/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("20/minute")
+def query_data(request: Request, session_id: str, user_query: str = Query(...), mode: str = Query("explore")):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -403,8 +433,9 @@ def query_data(session_id: str, user_query: str = Query(...), mode: str = Query(
     return result
 
 
-@app.post("/api/confirm-edit/{session_id}")
-def confirm_edit(session_id: str, sql_query: str = Query(...)):
+@app.post("/api/confirm-edit/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("20/minute")
+def confirm_edit(request: Request, session_id: str, sql_query: str = Query(...)):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -416,8 +447,9 @@ def confirm_edit(session_id: str, sql_query: str = Query(...)):
     return result
 
 
-@app.get("/api/samples")
-def list_samples():
+@app.get("/api/samples")  # Public — no auth required
+@limiter.limit("120/minute")
+def list_samples(request: Request):
     """Returns available built-in sample datasets."""
     data_dir = os.path.join(_BACKEND_DIR, "data")
     samples = []
@@ -451,8 +483,9 @@ def list_samples():
     return {"samples": samples}
 
 
-@app.post("/api/load-sample/{filename}")
-async def load_sample(filename: str):
+@app.post("/api/load-sample/{filename}", dependencies=[Depends(require_api_key)])
+@limiter.limit("10/minute")
+async def load_sample(request: Request, filename: str):
     """Loads a built-in sample dataset through the full detection pipeline."""
     # Sanitise filename — only allow known files
     allowed = {"fraud_transactions.csv", "patient_vitals.csv", "ecommerce_reviews.csv"}
