@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import type { AnomalyRow, SessionDataResponse } from '@/types/api';
 import { motion } from 'framer-motion';
-import { ShieldAlert, CheckCircle, FileWarning, AlertTriangle, AlertCircle, Crosshair, Activity, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { ShieldAlert, CheckCircle, AlertTriangle, AlertCircle, Crosshair, Activity, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 export default function Detection({ sessionId }: { sessionId: string }) {
     const [data, setData] = useState<AnomalyRow[]>([]);
@@ -144,14 +144,18 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                             <tbody className="divide-y divide-neutral-800">
                                 {displayData.map((row, idx) => {
                                     const originalIdx = data.indexOf(row);
-                                    const { is_anomaly: _a, AI_Reason: _b, Threat_Score: _c, SHAP_Payload: _d, ...rowData } = row;
+                                    const rowData: Record<string, unknown> = { ...row };
+                                    delete rowData.is_anomaly;
+                                    delete rowData.AI_Reason;
+                                    delete rowData.Threat_Score;
+                                    delete rowData.SHAP_Payload;
 
                                     let shapData: Array<{ feature: string; impact: number }> | null = null;
                                     try {
                                         if (row.SHAP_Payload) {
                                             shapData = JSON.parse(row.SHAP_Payload);
                                         }
-                                    } catch (e) {
+                                    } catch {
                                         // Ignore parse error
                                     }
 

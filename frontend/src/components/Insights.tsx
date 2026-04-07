@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import api from "@/lib/api";
 import type { OIAInsight, InsightsResponse } from "@/types/api";
 import { Brain, Eye, Zap, AlertTriangle } from "lucide-react";
@@ -18,7 +18,7 @@ export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }
     const [loading, setLoading] = useState(!hasCachedData);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchInsights = () => {
+    const fetchInsights = useCallback(() => {
         setLoading(true);
         setError(null);
         setInsights([]);
@@ -38,14 +38,13 @@ export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }
                 setError(axiosErr.response?.data?.error || axiosErr.response?.data?.detail || "Failed to generate AI insights.");
                 setLoading(false);
             });
-    };
+    }, [sessionId, onInsightsLoaded]);
 
     useEffect(() => {
         if (!hasCachedData) {
             fetchInsights();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId]);
+    }, [fetchInsights, hasCachedData]);
 
     if (loading) {
         return (

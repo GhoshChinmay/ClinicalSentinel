@@ -10,6 +10,7 @@ import numpy as np
 import json
 from sklearn.ensemble import IsolationForest, HistGradientBoostingClassifier
 import shap
+import random
 
 from utils import _session_dir, logger
 from engines.nlp_bridge import process_text_anomalies
@@ -254,7 +255,6 @@ def process_and_detect(
 
     # --- AI REASON GENERATOR (Narrative Synthesis Engine) ---
     logger.info("Starting Narrative Synthesis for AI Reasoning...")
-    import random
     
     engineered_suffixes = ("_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
     engineered_prefixes = ("nlp_pc",)

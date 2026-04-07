@@ -17,7 +17,7 @@ function QuarantineVaultModal({ sessionId, onClose }: { sessionId: string, onClo
                 const res = await api.get<QuarantineResponse>(`/api/quarantine/${sessionId}`);
                 setAuditData(res.data.data || []);
             } catch (err) {
-                console.error("Failed to fetch quarantine vault");
+                console.error("Failed to fetch quarantine vault", err);
             } finally {
                 setLoading(false);
             }

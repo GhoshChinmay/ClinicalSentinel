@@ -21,7 +21,6 @@ type PipelineStep = 'upload' | 'detect' | 'insights' | 'clean' | 'compare' | 'ed
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState<PipelineStep>('upload');
-  const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
@@ -53,7 +52,6 @@ export default function Home() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
-      setFile(selectedFile);
       await processUpload(selectedFile);
     }
   };

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import api from '@/lib/api';
 import type { CompareResponse } from '@/types/api';
-import { ArrowRight, CheckCircle, AlertTriangle, Loader2, Info } from "lucide-react";
+import { ArrowRight, CheckCircle, Loader2, Info } from "lucide-react";
 
 interface CompareProps {
     sessionId: string;
