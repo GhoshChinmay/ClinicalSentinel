@@ -33,8 +33,9 @@ export default function ReviewEdit({ sessionId }: { sessionId: string }) {
                     setError("No cleaned data available. Complete the Cleaning step first, or note that your cleaning method may have removed all rows.");
                 }
             } catch (err: unknown) {
-                const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
-                const detail = axiosErr.response?.data?.detail || axiosErr.message || "Failed to load dataset.";
+                // M-04 FIX: Backend returns {error: "..."} not {detail: "..."}; check .error first
+                const axiosErr = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
+                const detail = axiosErr.response?.data?.error || axiosErr.response?.data?.detail || axiosErr.message || "Failed to load dataset.";
                 setError(`Could not load the dataset: ${detail}`);
                 console.error("ReviewEdit: Failed to load clean data", err);
             } finally {

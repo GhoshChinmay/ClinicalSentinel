@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
-import { API_BASE } from '@/lib/api';
 import type { AnomalyRow, QuarantineResponse, CleanResponse } from '@/types/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, Scissors, CheckCircle, Loader2, Shield, EyeOff, Activity, X, AlertTriangle, Download, Info, Sparkles } from 'lucide-react';
@@ -45,8 +44,14 @@ function QuarantineVaultModal({ sessionId, onClose }: { sessionId: string, onClo
                     <div className="flex items-center space-x-4">
                         <button
                             onClick={() => {
-                                const headers = Object.keys(auditData[0] || {}).join(',');
-                                const rows = auditData.map(row => Object.values(row).join(','));
+                                // M-02 FIX: Properly escape CSV cells containing commas, quotes, or newlines
+                                const escapeCell = (val: unknown): string => {
+                                    const s = val === null || val === undefined ? '' : String(val);
+                                    const needsQuoting = s.includes(',') || s.includes('"') || s.includes('\n');
+                                    return needsQuoting ? `"${s.replace(/"/g, '""')}"` : s;
+                                };
+                                const headers = Object.keys(auditData[0] || {}).map(escapeCell).join(',');
+                                const rows = auditData.map(row => Object.values(row).map(escapeCell).join(','));
                                 const csv = [headers, ...rows].join('\n');
                                 const blob = new Blob([csv], { type: 'text/csv' });
                                 const url = URL.createObjectURL(blob);
@@ -178,8 +183,9 @@ export default function Clean({ sessionId, onComplete, recommendedMethod = 'quar
             const res = await api.post<CleanResponse>(`/api/clean/${sessionId}?action=${action}`);
             setSuccessMsg(`Successfully applied ${action}. Final dataset has ${res.data.new_total} rows.`);
         } catch (err: unknown) {
-            const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
-            const detail = axiosErr.response?.data?.detail || axiosErr.message || "An unknown error occurred during cleaning.";
+            // M-03 FIX: Backend returns {error: "..."} not {detail: "..."}; check .error first
+            const axiosErr = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
+            const detail = axiosErr.response?.data?.error || axiosErr.response?.data?.detail || axiosErr.message || "An unknown error occurred during cleaning.";
             console.error("DataSentinel: Clean failed —", detail);
             setErrorMsg(`Cleaning failed: ${detail}`);
         } finally {

@@ -20,7 +20,8 @@ export default function Compare({ sessionId }: CompareProps) {
                 setLoading(false);
             })
             .catch((err) => {
-                setError(err.response?.data?.detail || "Failed to fetch comparison data.");
+                // FE-03 FIX: Backend returns {error: "..."} not {detail: "..."}
+                setError(err.response?.data?.error || err.response?.data?.detail || "Failed to fetch comparison data.");
                 setLoading(false);
             });
     }, [sessionId]);

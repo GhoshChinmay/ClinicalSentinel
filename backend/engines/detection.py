@@ -34,14 +34,18 @@ def process_and_detect(
     if df is None:
         try:
             df = pl.read_csv(file_path, infer_schema_length=1000000)
-        except Exception:
+        except Exception as primary_err:
+            # M-06 FIX: Log the original error before attempting pandas fallback
+            logger.warning("Polars CSV read failed (%s), attempting pandas fallback...", primary_err)
             try:
                 pandas_fallback = pd.read_csv(file_path, low_memory=False)
                 df = pl.from_pandas(pandas_fallback)
             except Exception as inner_e:
                 return {"error": f"Fatal Read Error. Both engines failed to parse the CSV: {str(inner_e)}"}
 
+    pre_dedup = len(df)
     df = df.unique()
+    logger.info("Dedup complete: %d → %d rows.", pre_dedup, len(df))
 
     # ---------------------------------------------------------
     # THE VELOCITY ENGINE (Time-Series Context)
@@ -136,7 +140,8 @@ def process_and_detect(
 
     encoded_df = pandas_df[numeric_cols].copy().fillna(0)
     for col in cat_cols:
-        freq_encoding = pandas_df[col].value_counts(normalize=True)
+        # BUG-01 FIX: Use explicit dict so .map() works correctly across Pandas versions
+        freq_encoding = pandas_df[col].value_counts(normalize=True).to_dict()
         encoded_df[col + "_freq"] = pandas_df[col].map(freq_encoding).fillna(0)
 
     # --- THE AI DETECTION ENGINE (Z-Score Thresholding) ---
@@ -264,7 +269,8 @@ def process_and_detect(
     if any(is_anomaly):
         stats = {}
         for col in original_numeric:
-            stats[col] = {"mean": pandas_df[col].mean(), "std": pandas_df[col].std()}
+            # BUG-02 FIX: Coerce NaN std (e.g. all-null or single-row columns) to 0
+            stats[col] = {"mean": pandas_df[col].mean() or 0, "std": pandas_df[col].std() or 0}
 
         velocity_stats = {}
         for vc in velocity_cols_added:

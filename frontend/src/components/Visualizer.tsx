@@ -41,7 +41,8 @@ export default function Visualizer({ sessionId }: VizProps) {
                 setLoading(false);
             })
             .catch((err) => {
-                setError(err.response?.data?.detail || "Failed to load visualization data.");
+                // FE-03 FIX: Backend returns {error: "..."} not {detail: "..."}
+                setError(err.response?.data?.error || err.response?.data?.detail || "Failed to load visualization data.");
                 setLoading(false);
             });
     }, [sessionId]);

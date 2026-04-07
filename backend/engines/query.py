@@ -91,7 +91,10 @@ CRITICAL RULES:
             system_prompt += "\nReturn ONLY a valid SQL SELECT statement. You are a machine. Do NOT output conversational text. Start your response strictly with the word SELECT. Do NOT include a trailing semicolon."
 
         response = ollama.chat(model="llama3:latest", messages=[{"role": "system", "content": system_prompt}])
-        raw_response = response["message"]["content"].strip()
+        # H-04 FIX: ollama ≥0.2.0 returns a Pydantic ChatResponse object, NOT a dict.
+        # Use attribute access (.message.content) to be compatible with both old and new versions.
+        raw_response_obj = response["message"]["content"] if isinstance(response, dict) else response.message.content
+        raw_response = raw_response_obj.strip()
 
         sql_query = _sanitize_llm_sql(raw_response)
         sql_query = _force_try_cast(sql_query)
@@ -138,6 +141,16 @@ def confirm_and_execute_edit(session_id: str, sql_query: str):
 
         clean_sql = sql_query.strip().rstrip(";")
         clean_sql = _force_try_cast(clean_sql)
+
+        # BUG-09 FIX: SQL injection guard — block dangerous DDL/DML and multi-statement injection
+        _FORBIDDEN_PATTERNS = re.compile(
+            r"\b(DROP|CREATE|ALTER|COPY|ATTACH|DETACH|PRAGMA|VACUUM|ANALYZE|GRANT|REVOKE|TRUNCATE)\b",
+            re.IGNORECASE
+        )
+        if _FORBIDDEN_PATTERNS.search(clean_sql):
+            return {"error": "Forbidden SQL statement type. Only UPDATE and DELETE are permitted."}
+        if ";" in clean_sql:
+            return {"error": "Multi-statement SQL is not allowed."}
 
         upper = clean_sql.strip().upper()
 

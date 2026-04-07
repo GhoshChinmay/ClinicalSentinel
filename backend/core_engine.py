@@ -4,6 +4,14 @@ All logic has been refactored into the engines/ package.
 This file re-exports everything for any external imports.
 """
 
+import warnings
+warnings.warn(
+    "DataSentinel core_engine is deprecated and will be removed in a future release. "
+    "Please import directly from the new engines/ package.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from engines import (
     process_and_detect,
     clean_dataset,

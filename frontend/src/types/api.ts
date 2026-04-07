@@ -25,6 +25,8 @@ export interface AnomalyRow {
 export interface SessionDataResponse {
   data: AnomalyRow[];
   total_anomalies: number;
+  // FE-06 FIX: total_rows is returned by the backend but was missing from this interface
+  total_rows: number;
 }
 
 export interface CleanResponse {

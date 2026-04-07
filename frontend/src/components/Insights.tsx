@@ -33,8 +33,9 @@ export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }
                 }
             })
             .catch((err: unknown) => {
-                const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
-                setError(axiosErr.response?.data?.detail || "Failed to generate AI insights.");
+                const axiosErr = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
+                // FE-03 FIX: Backend returns {error: "..."} not {detail: "..."}
+                setError(axiosErr.response?.data?.error || axiosErr.response?.data?.detail || "Failed to generate AI insights.");
                 setLoading(false);
             });
     };

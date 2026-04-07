@@ -6,7 +6,7 @@ Validates uploaded datasets against minimum quality contracts.
 import polars as pl
 import os
 import json
-from utils import _BACKEND_DIR
+from utils import _BACKEND_DIR, logger
 
 class SchemaEnforcer:
     @staticmethod
@@ -56,7 +56,7 @@ class SchemaEnforcer:
                     if drift_errors:
                         return {"valid": False, "errors": ["Schema Contract Violation:"] + drift_errors}
                 except Exception as e:
-                    pass
+                    logger.warning("Schema drift check failed (schema file may be corrupt): %s", e)
             
             # Save or update schema if no drift errors (or if it's new)
             with open(schema_path, "w") as f:

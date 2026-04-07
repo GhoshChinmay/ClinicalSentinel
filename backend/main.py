@@ -44,8 +44,14 @@ def submit_feedback(payload: FeedbackRequest):
     import json
     feedback_file = os.path.join(_BACKEND_DIR, "data", "feedback.jsonl")
     os.makedirs(os.path.dirname(feedback_file), exist_ok=True)
+    # H-01 FIX: Prevent oversized row_data from being written to disk (DoS via write amplification)
+    payload_bytes = json.dumps(payload.row_data).encode()
+    MAX_FEEDBACK_BYTES = 64 * 1024  # 64 KB per feedback entry is more than enough
+    if len(payload_bytes) > MAX_FEEDBACK_BYTES:
+        return JSONResponse(status_code=413, content={"error": "Feedback payload too large."})
     with open(feedback_file, "a") as f:
-        f.write(json.dumps(payload.dict()) + "\n")
+        # BUG-08 FIX: .dict() is deprecated in Pydantic v2; use .model_dump()
+        f.write(json.dumps(payload.model_dump()) + "\n")
     return {"status": "success"}
 
 # --- CORS: environment-based whitelist instead of wildcard ---
@@ -74,15 +80,25 @@ async def upload_csv(file: UploadFile = File(...)):
     cleanup_stale_sessions(max_age_hours=24)
 
     os.makedirs(os.path.join(_BACKEND_DIR, "temp_uploads"), exist_ok=True)
-    temp_file_path = os.path.join(_BACKEND_DIR, "temp_uploads", file.filename)
+    # BUG-07 FIX: Sanitize filename to prevent path traversal attacks (e.g. ../../etc/passwd)
+    safe_filename = os.path.basename(file.filename or "upload.bin")
+    if not safe_filename:
+        safe_filename = "upload.bin"
+    temp_file_path = os.path.join(_BACKEND_DIR, "temp_uploads", safe_filename)
 
     try:
         contents = await file.read()
+        # SAFE-01 FIX: Reject files over 100MB before writing to disk (prevents OOM)
+        MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+        if len(contents) > MAX_UPLOAD_BYTES:
+            return JSONResponse(status_code=413, content={
+                "error": f"File too large ({len(contents) // (1024*1024)} MB). Maximum upload size is 100 MB."
+            })
         with open(temp_file_path, "wb") as f:
             f.write(contents)
 
         # ── MULTI-FORMAT PARSER ──────────────────────────────────────────────
-        filename_lower = file.filename.lower()
+        filename_lower = safe_filename.lower()
         df = None
 
         if filename_lower.endswith((".xlsx", ".xls")):
@@ -226,6 +242,9 @@ def compare_data(session_id: str):
 
     if not os.path.exists(clean_path):
         return JSONResponse(status_code=400, content={"error": "No cleaned data found."})
+    # SAFE-03 FIX: Also verify the raw data file exists before reading it
+    if not os.path.exists(raw_path):
+        return JSONResponse(status_code=400, content={"error": "Raw dataset not found. Session may be corrupted."})
 
     df_raw = pl.read_parquet(raw_path)
     df_clean = pl.read_parquet(clean_path)
@@ -313,9 +332,18 @@ def download_data(session_id: str, source: str = Query("cleaned")):
 
     df = pl.read_parquet(parquet_path)
 
-    # Strip internal columns if present
-    internal_cols = {"is_anomaly", "Threat_Score", "AI_Reason"}
-    cols_to_drop = [c for c in df.columns if c in internal_cols]
+    # SAFE-04 FIX: Strip ALL internal/engineered columns (not just is_anomaly/Threat_Score/AI_Reason)
+    internal_cols_set = {"is_anomaly", "Threat_Score", "AI_Reason", "SHAP_Payload"}
+    engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+    engineered_prefixes = ("nlp_pc",)
+    velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
+    cols_to_drop = [
+        c for c in df.columns
+        if c in internal_cols_set
+        or c.endswith(engineered_suffixes)
+        or any(c.startswith(p) for p in engineered_prefixes)
+        or c in velocity_names
+    ]
     if cols_to_drop:
         df = df.drop(cols_to_drop)
 

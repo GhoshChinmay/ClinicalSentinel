@@ -61,7 +61,7 @@ def clean_dataset(session_id: str, action: str = "drop"):
     elif action == "mask":
         string_cols = [
             col for col, dtype in zip(df.columns, df.dtypes)
-            if dtype in [pl.Utf8, getattr(pl, "String", pl.Utf8)]
+            if "String" in str(dtype) or "Utf8" in str(dtype)
         ]
 
         safe_text_cols = []
@@ -113,19 +113,24 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
             pandas_df = df.to_pandas()
 
-            clean_mask = pandas_df["is_anomaly"] == False
-            anomaly_mask = pandas_df["is_anomaly"] == True
+            # BUG-12 FIX: Cast to bool explicitly to handle Int8 (0/1) values from parquet
+            clean_mask = pandas_df["is_anomaly"].astype(bool) == False
+            anomaly_mask = pandas_df["is_anomaly"].astype(bool) == True
 
-            for col in target_cols:
-                pandas_df.loc[anomaly_mask, col] = np.nan
+            # H-03 FIX: Guard against all-anomaly datasets where clean_mask is empty
+            if not clean_mask.any():
+                logger.warning("[IMPUTE] All rows flagged as anomalies — no clean rows to train KNN on. Skipping imputation.")
+            else:
+                for col in target_cols:
+                    pandas_df.loc[anomaly_mask, col] = np.nan
 
-            imputer = KNNImputer(n_neighbors=5, weights="distance")
-            imputer.fit(pandas_df.loc[clean_mask, target_cols])
-            
-            pandas_df.loc[anomaly_mask, target_cols] = imputer.transform(pandas_df.loc[anomaly_mask, target_cols])
+                imputer = KNNImputer(n_neighbors=5, weights="distance")
+                imputer.fit(pandas_df.loc[clean_mask, target_cols])
+                
+                pandas_df.loc[anomaly_mask, target_cols] = imputer.transform(pandas_df.loc[anomaly_mask, target_cols])
 
-            for col in target_cols:
-                df = df.with_columns(pl.Series(name=col, values=pandas_df[col]))
+                for col in target_cols:
+                    df = df.with_columns(pl.Series(name=col, values=pandas_df[col]))
 
         cleaned_df = df
 

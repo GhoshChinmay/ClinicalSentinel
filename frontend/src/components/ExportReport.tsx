@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
+import { API_BASE } from '@/lib/api';
 import { DownloadCloud, AlertTriangle } from 'lucide-react';
 
 interface QualityReport {
@@ -27,7 +28,8 @@ export default function ExportReport({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   const handleDownload = () => {
-    window.open(`${api.defaults.baseURL || 'http://127.0.0.1:8000'}/api/download/${sessionId}?source=cleaned`, '_blank');
+    // L-03 FIX: Use centralized API_BASE constant instead of hardcoded localhost fallback
+    window.open(`${API_BASE}/api/download/${sessionId}?source=cleaned`, '_blank');
   };
 
   if (loading) return <div className="text-center p-12 text-neutral-500">Loading quality report...</div>;

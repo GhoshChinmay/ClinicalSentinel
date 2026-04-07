@@ -48,8 +48,9 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                 }
             } catch (err: unknown) {
                 console.error("Failed to load anomalies", err);
-                const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
-                setError(axiosErr.response?.data?.detail || axiosErr.message || "Failed to load anomaly report.");
+                // FE-02 FIX: Backend returns {error: "..."} not {detail: "..."}
+                const axiosErr = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
+                setError(axiosErr.response?.data?.error || axiosErr.response?.data?.detail || axiosErr.message || "Failed to load anomaly report.");
             } finally {
                 setLoading(false);
             }
@@ -149,6 +150,9 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                             </thead>
                             <tbody className="divide-y divide-neutral-800">
                                 {displayData.map((row, idx) => {
+                                    // FE-04 FIX: Use the row's index in the FULL data array as the stable key
+                                    // so feedback doesn't map to a different row when threshold filtering changes
+                                    const originalIdx = data.indexOf(row);
                                     const { is_anomaly: _a, AI_Reason: _b, Threat_Score: _c, SHAP_Payload: _d, ...rowData } = row;
 
                                     let shapData: Array<{ feature: string; impact: number }> | null = null;
@@ -224,21 +228,20 @@ export default function Detection({ sessionId }: { sessionId: string }) {
                                                         </div>
                                                     )}
 
-                                                    {/* Active Learning Feedback Buttons */}
                                                     <div className="mt-4 flex items-center space-x-2 border-t border-neutral-800/60 pt-3">
                                                         <span className="text-[10px] uppercase font-bold text-neutral-500 mr-2">Was this correct?</span>
                                                         <button 
-                                                            onClick={() => handleFeedback(row, idx, true)}
-                                                            disabled={feedbackMap[idx] !== undefined}
-                                                            className={`flex items-center px-2 py-1 space-x-1 rounded text-[10px] font-bold border transition-colors ${feedbackMap[idx] === 'correct' ? 'bg-green-500/20 text-green-400 border-green-500/50' : feedbackMap[idx] === 'incorrect' ? 'opacity-50 cursor-not-allowed bg-black text-neutral-600 border-neutral-800' : 'bg-black text-neutral-400 border-neutral-800 hover:text-green-400 hover:border-green-500/50'}`}
+                                                            onClick={() => handleFeedback(row, originalIdx, true)}
+                                                            disabled={feedbackMap[originalIdx] !== undefined}
+                                                            className={`flex items-center px-2 py-1 space-x-1 rounded text-[10px] font-bold border transition-colors ${feedbackMap[originalIdx] === 'correct' ? 'bg-green-500/20 text-green-400 border-green-500/50' : feedbackMap[originalIdx] === 'incorrect' ? 'opacity-50 cursor-not-allowed bg-black text-neutral-600 border-neutral-800' : 'bg-black text-neutral-400 border-neutral-800 hover:text-green-400 hover:border-green-500/50'}`}
                                                         >
                                                             <ThumbsUp className="w-3 h-3" />
                                                             <span>Yes</span>
                                                         </button>
                                                         <button 
-                                                            onClick={() => handleFeedback(row, idx, false)}
-                                                            disabled={feedbackMap[idx] !== undefined}
-                                                            className={`flex items-center px-2 py-1 space-x-1 rounded text-[10px] font-bold border transition-colors ${feedbackMap[idx] === 'incorrect' ? 'bg-red-500/20 text-red-400 border-red-500/50' : feedbackMap[idx] === 'correct' ? 'opacity-50 cursor-not-allowed bg-black text-neutral-600 border-neutral-800' : 'bg-black text-neutral-400 border-neutral-800 hover:text-red-400 hover:border-red-500/50'}`}
+                                                            onClick={() => handleFeedback(row, originalIdx, false)}
+                                                            disabled={feedbackMap[originalIdx] !== undefined}
+                                                            className={`flex items-center px-2 py-1 space-x-1 rounded text-[10px] font-bold border transition-colors ${feedbackMap[originalIdx] === 'incorrect' ? 'bg-red-500/20 text-red-400 border-red-500/50' : feedbackMap[originalIdx] === 'correct' ? 'opacity-50 cursor-not-allowed bg-black text-neutral-600 border-neutral-800' : 'bg-black text-neutral-400 border-neutral-800 hover:text-red-400 hover:border-red-500/50'}`}
                                                         >
                                                             <ThumbsDown className="w-3 h-3" />
                                                             <span>No</span>

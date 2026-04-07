@@ -71,7 +71,8 @@ def get_viz_data(session_id: str):
     df_raw = pl.read_parquet(raw_path)
     df_clean = pl.read_parquet(clean_path) if os.path.exists(clean_path) else None
 
-    internal_cols = ["is_anomaly", "Threat_Score", "Class", "AI_Reason"]
+    # BUG-11 FIX: Added SHAP_Payload which was leaking into histograms/correlation
+    internal_cols = ["is_anomaly", "Threat_Score", "Class", "AI_Reason", "SHAP_Payload"]
     engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
     engineered_prefixes = ("nlp_pc",)
     velocity_names = {"velocity_24h_sum", "velocity_1h_count"}

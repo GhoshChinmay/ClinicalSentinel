@@ -55,8 +55,9 @@ export default function Query({ sessionId }: { sessionId: string }) {
             }
         } catch (err: unknown) {
             let errorMsg = "Failed to process query.";
-            const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string };
-            const detail = axiosErr.response?.data?.detail;
+            const axiosErr = err as { response?: { data?: { error?: unknown; detail?: unknown } }; message?: string };
+            // FE-02 FIX: Backend returns {error: "..."} not {detail: "..."}; check .error first
+            const detail = axiosErr.response?.data?.error || axiosErr.response?.data?.detail;
 
             if (detail) {
                 if (Array.isArray(detail)) {
@@ -69,6 +70,8 @@ export default function Query({ sessionId }: { sessionId: string }) {
                 } else {
                     errorMsg = JSON.stringify(detail);
                 }
+            } else if (axiosErr.message) {
+                errorMsg = axiosErr.message;
             }
             setMessages(prev => [...prev, { id: generateId(), role: 'assistant', type: 'error', content: errorMsg }]);
         } finally {
@@ -89,8 +92,9 @@ export default function Query({ sessionId }: { sessionId: string }) {
             ));
         } catch (err: unknown) {
             let errorMsg = "Execution failed.";
-            const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string };
-            const detail = axiosErr.response?.data?.detail;
+            const axiosErr = err as { response?: { data?: { error?: unknown; detail?: unknown } }; message?: string };
+            // FE-02 FIX: Backend returns {error: "..."} not {detail: "..."}; check .error first
+            const detail = axiosErr.response?.data?.error || axiosErr.response?.data?.detail;
 
             if (detail) {
                 if (Array.isArray(detail)) {
@@ -103,6 +107,8 @@ export default function Query({ sessionId }: { sessionId: string }) {
                 } else {
                     errorMsg = JSON.stringify(detail);
                 }
+            } else if (axiosErr.message) {
+                errorMsg = axiosErr.message;
             }
             setMessages(prev => [...prev, { id: generateId(), role: 'assistant', type: 'error', content: errorMsg }]);
         } finally {
