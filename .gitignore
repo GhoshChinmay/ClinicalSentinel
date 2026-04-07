@@ -60,3 +60,17 @@ backend/data/*
 temp_uploads/
 backend/temp_uploads/
 backend/sessions/
+
+# Build artifacts
+frontend/out/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage

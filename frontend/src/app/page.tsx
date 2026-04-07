@@ -25,6 +25,9 @@ export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // --- Ollama Health Check ---
+  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
+
   // --- Cached Insights (survives tab switches) ---
   const [cachedInsights, setCachedInsights] = useState<Array<{observation: string; insight: string; action: string}> | null>(null);
 
@@ -44,6 +47,7 @@ export default function Home() {
 
   useEffect(() => {
     api.get('/api/samples').then(res => setSamples(res.data.samples)).catch(console.error);
+    api.get('/api/health').then(res => setOllamaAvailable(res.data.ollama)).catch(() => setOllamaAvailable(false));
   }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -171,6 +175,13 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#050505] text-white flex flex-col font-sans">
       {renderNav()}
+
+      {/* Non-blocking Ollama health warning */}
+      {ollamaAvailable === false && currentStep !== 'upload' && (
+        <div className="w-full bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-center text-amber-400 text-sm font-medium">
+          ⚠ Local LLM (Ollama) is not running. Insights and Query tabs will use static fallbacks.
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col items-center p-6 w-full max-w-6xl mx-auto">
         <AnimatePresence mode="wait">

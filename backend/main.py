@@ -74,6 +74,20 @@ def root():
     return {"status": "DataSentinel detection engine is online."}
 
 
+@app.get("/api/health")
+def health_check():
+    """Probe Ollama and return its availability status for the frontend."""
+    import requests as _requests
+    try:
+        resp = _requests.get("http://localhost:11434/api/tags", timeout=3)
+        if resp.status_code == 200:
+            models = [m.get("name", "") for m in resp.json().get("models", [])]
+            return {"ollama": True, "models": models}
+        return {"ollama": False, "models": []}
+    except Exception:
+        return {"ollama": False, "models": []}
+
+
 @app.post("/api/upload/")
 async def upload_csv(file: UploadFile = File(...)):
     # Clean up stale sessions (>24h old) instead of nuking everything

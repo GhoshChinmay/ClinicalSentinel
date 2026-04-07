@@ -252,7 +252,10 @@ def process_and_detect(
 
     logger.info("FINISHED THREAT ENGINE")
 
-    # --- AI REASON GENERATOR ---
+    # --- AI REASON GENERATOR (Narrative Synthesis Engine) ---
+    logger.info("Starting Narrative Synthesis for AI Reasoning...")
+    import random
+    
     engineered_suffixes = ("_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
     engineered_prefixes = ("nlp_pc",)
     velocity_col_names = set(velocity_cols_added)
@@ -267,60 +270,104 @@ def process_and_detect(
     reasons_list = [""] * len(pandas_df)
 
     if any(is_anomaly):
+        # 1. Pre-calculate statistics for context
         stats = {}
         for col in original_numeric:
-            # BUG-02 FIX: Coerce NaN std (e.g. all-null or single-row columns) to 0
-            stats[col] = {"mean": pandas_df[col].mean() or 0, "std": pandas_df[col].std() or 0}
+            col_mean = pandas_df[col].mean()
+            col_std = pandas_df[col].std()
+            stats[col] = {"mean": col_mean if pd.notna(col_mean) else 0, "std": col_std if pd.notna(col_std) else 0}
 
-        velocity_stats = {}
-        for vc in velocity_cols_added:
-            if vc in pandas_df.columns:
-                velocity_stats[vc] = {"mean": pandas_df[vc].mean(), "std": pandas_df[vc].std()}
+        velocity_stats = {vc: {"mean": pandas_df[vc].mean(), "std": pandas_df[vc].std()} for vc in velocity_cols_added if vc in pandas_df.columns}
 
         rare_cats = {}
         for col in cat_cols:
-            counts = pandas_df[col].value_counts(normalize=True)
-            rare_cats[col] = counts[counts < 0.01].index.tolist()
+            if pandas_df[col].nunique() / len(pandas_df) < 0.3:
+                counts = pandas_df[col].value_counts(normalize=True)
+                rare_cats[col] = counts[counts < 0.05].index.tolist()
 
         anomaly_indices = [i for i, x in enumerate(is_anomaly) if x]
-        
-        # Removing optimization cap: the user specifically requested every single anomaly to have reasoning.
 
+        # 2. Parse SHAP payloads
+        parsed_shap = {}
+        if "SHAP_Payload" in df.columns:
+            shap_col = df["SHAP_Payload"].to_list()
+            for idx in anomaly_indices:
+                try:
+                    payload = json.loads(shap_col[idx])
+                    if payload: parsed_shap[idx] = payload
+                except: pass
+
+        # 3. Dynamic Narrative Generation
         for idx in anomaly_indices:
             row = pandas_df.iloc[idx]
-            reasons = []
+            
+            # If SHAP is available, use it to drive the narrative
+            if idx in parsed_shap and len(parsed_shap[idx]) > 0:
+                shap_items = parsed_shap[idx]
+                
+                # --- Primary Feature ---
+                top_feat = shap_items[0]["feature"]
+                top_impact = shap_items[0]["impact"]
+                
+                orig_feat = top_feat.replace("_freq", "") if top_feat.endswith("_freq") else top_feat
+                val = row.get(orig_feat, "Unknown")
+                if isinstance(val, float) and pd.notna(val): val = f"{val:.2f}"
+                
+                # Determine Context
+                context = ""
+                if orig_feat in stats and stats[orig_feat]["std"] > 0:
+                    z = (row[orig_feat] - stats[orig_feat]["mean"]) / stats[orig_feat]["std"]
+                    direction = "higher" if z > 0 else "lower"
+                    context = f"which is {abs(z):.1f} standard deviations {direction} than the typical average of {stats[orig_feat]['mean']:.2f}"
+                elif orig_feat in rare_cats and str(val) in rare_cats[orig_feat]:
+                    context = "representing a highly uncommon category in this dataset"
+                elif top_feat in velocity_cols_added:
+                    context = "indicating an abnormal burst in temporal activity"
+                else:
+                    context = "deviating significantly from standard patterns"
 
-            for vc in velocity_cols_added:
-                if vc in pandas_df.columns and vc in velocity_stats:
-                    vc_mean = velocity_stats[vc]["mean"]
-                    vc_std = velocity_stats[vc]["std"]
-                    if vc_std > 0 and row[vc] > vc_mean + (2.5 * vc_std):
-                        if "24h" in vc:
-                            reasons.append(f"Velocity spike: 24-hour rolling total ({row[vc]:.1f}) far exceeds the norm ({vc_mean:.1f}).")
-                        elif "1h" in vc:
-                            reasons.append(f"Burst detected: {int(row[vc])} events in 1 hour vs. average of {vc_mean:.1f}.")
+                # Randomize primary sentence structure
+                primary_templates = [
+                    f"The primary anomaly driver is '{orig_feat}' (value: {val}), {context}.",
+                    f"This row was flagged heavily due to '{orig_feat}' ({val}), {context}.",
+                    f"Model detection heavily weighted '{orig_feat}' ({val}) as anomalous, {context}.",
+                    f"An extreme variance in '{orig_feat}' ({val}) triggered the detection, {context}."
+                ]
+                reason = random.choice(primary_templates)
 
-            for col in original_numeric:
-                col_mean = stats[col]["mean"]
-                col_std = stats[col]["std"]
+                # --- Secondary Feature ---
+                if len(shap_items) > 1 and abs(shap_items[1]["impact"]) > (abs(top_impact) * 0.25):
+                    sec_feat = shap_items[1]["feature"]
+                    sec_orig = sec_feat.replace("_freq", "") if sec_feat.endswith("_freq") else sec_feat
+                    sec_val = row.get(sec_orig, "Unknown")
+                    if isinstance(sec_val, float) and pd.notna(sec_val): sec_val = f"{sec_val:.2f}"
+                    
+                    sec_templates = [
+                        f" This is compounded by unusual behavior in '{sec_orig}' (value: {sec_val}).",
+                        f" Additionally, '{sec_orig}' ({sec_val}) strongly deviates from expectations.",
+                        f" The model also found the interaction with '{sec_orig}' ({sec_val}) to be highly irregular."
+                    ]
+                    reason += random.choice(sec_templates)
+                
+                reasons_list[idx] = reason
 
-                if col_std > 0 and row[col] > col_mean + (2.5 * col_std):
-                    reasons.append(f"'{col}' ({row[col]:.1f}) is exceptionally high compared to the average ({col_mean:.1f}).")
-                elif col_std > 0 and row[col] < col_mean - (2.5 * col_std):
-                    reasons.append(f"'{col}' ({row[col]:.1f}) is suspiciously low compared to normal patterns.")
-
-            for col in cat_cols:
-                val = str(row[col])
-                if val in rare_cats[col]:
-                    reasons.append(f"The text '{val}' in '{col}' is extremely rare (possible typo).")
-
-            if not reasons:
-                reasons.append("Complex anomaly: The combination of these variables breaks standard dataset patterns.")
-
-            reasons_list[idx] = " | ".join(reasons[:3])
+            else:
+                # Fallback if SHAP fails: find max z-score dynamically
+                max_z = 0
+                max_col = None
+                for col in original_numeric:
+                    if stats[col]["std"] > 0:
+                        z = abs((row[col] - stats[col]["mean"]) / stats[col]["std"])
+                        if z > max_z:
+                            max_z, max_col = z, col
+                
+                if max_col and max_z > 2.0:
+                    reasons_list[idx] = f"Detected via multivariate analysis: '{max_col}' ({row[max_col]:.2f}) is an extreme outlier ({max_z:.1f}σ) when combined with other fields."
+                else:
+                    reasons_list[idx] = "The AI model detected a complex, multi-dimensional pattern break in this row."
 
     df = df.with_columns(pl.Series(name="AI_Reason", values=reasons_list))
-    logger.info("FINISHED REASON GENERATOR")
+    logger.info("FINISHED NARRATIVE SYNTHESIS")
     raw_parquet_path = f"{session_dir}/raw_data.parquet"
     df.write_parquet(raw_parquet_path)
 
