@@ -28,6 +28,36 @@ It features a high-end, responsive "Deep Space" visual aesthetic using WebGL and
 - **Generative AI**: Ollama (Phi-3 for Holistic Insights, Llama 3 for NLQ)
 - **Testing**: fully comprehensive `pytest` suite ensuring 100% CI/CD pipeline readiness across detection, cleaning, queries, insights, and schema engines.
 
+## 🔐 Security & Hardening
+
+### API Key Authentication (Opt-In)
+DataSentinel ships with an opt-in API key gate. When the `DS_API_KEY` environment variable is set, every protected endpoint requires a matching `X-API-Key` request header. When it is **not** set (the default), all endpoints remain open — zero friction for local development.
+
+```bash
+# Generate a strong key
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Set these in your `.env` files to activate:
+```env
+# Backend (.env)
+DS_API_KEY=your-generated-key
+
+# Frontend (.env.local)
+NEXT_PUBLIC_API_KEY=your-generated-key
+```
+
+### Per-Endpoint Rate Limiting
+All endpoints are rate-limited via `slowapi` (in-memory, per-IP) to prevent CPU exhaustion and abuse:
+
+| Tier | Limit | Endpoints |
+|------|-------|-----------|
+| **Heavy CPU** | 10 req/min | `/api/upload/`, `/api/load-sample/` |
+| **LLM-bound** | 20 req/min | `/api/insights/`, `/api/report/`, `/api/query/`, `/api/confirm-edit/` |
+| **Standard** | 120 req/min | All other protected endpoints |
+
+Public endpoints (`/`, `/api/health`, `/api/samples`) are exempt from authentication but still rate-limited.
+
 ## 📦 Installation & Setup
 
 ### Prerequisites
@@ -55,12 +85,20 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 ```
+
+Copy the example environment file and adjust as needed:
+```bash
+cp ../.env.example .env
+```
+
 *Note: Make sure Ollama is installed and run `ollama pull llama3` and `ollama pull phi3` to download your models in the background.*
 
 Start the backend server:
 ```bash
 uvicorn main:app --reload --port 8000
 ```
+
+> **Tip:** To enable API key protection on a shared/deployed instance, set `DS_API_KEY` in your `.env` file and the matching `NEXT_PUBLIC_API_KEY` on the frontend. See [Security & Hardening](#-security--hardening) for details.
 
 ### 3. Setup the Frontend
 Open a new terminal and navigate to the `frontend` folder.
