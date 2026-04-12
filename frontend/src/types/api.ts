@@ -43,14 +43,62 @@ export interface CompareResponse {
   count: number;
 }
 
-export interface OIAInsight {
-  observation: string;
-  insight: string;
-  action: string;
+// ── New Insights Dashboard Types ─────────────────────────────
+
+export interface InsightsSummary {
+  total_rows: number;
+  total_columns: number;
+  numeric_columns: number;
+  text_columns: number;
+  date_columns: number;
+  anomaly_count: number;
+  anomaly_rate: number;
+  health_score: number;
 }
 
-export interface InsightsResponse {
-  insights: OIAInsight[];
+export interface ColumnProfile {
+  name: string;
+  type: "numeric" | "text";
+  // Numeric fields
+  min?: number | null;
+  max?: number | null;
+  mean?: number | null;
+  median?: number | null;
+  std?: number | null;
+  skewness?: number | null;
+  outlier_count?: number;
+  // Text fields
+  unique_values?: number;
+  // Common
+  null_count: number;
+  null_pct: number;
+}
+
+export interface MissingDataEntry {
+  column: string;
+  null_count: number;
+  null_pct: number;
+}
+
+export interface CorrelationEntry {
+  col_a: string;
+  col_b: string;
+  value: number;
+}
+
+export interface AnomalyDistEntry {
+  column: string;
+  anomaly_count: number;
+}
+
+export interface InsightsDashboardResponse {
+  summary: InsightsSummary;
+  column_profiles: ColumnProfile[];
+  missing_data_map: MissingDataEntry[];
+  type_breakdown: { numeric: number; text: number; date: number };
+  top_correlations: CorrelationEntry[];
+  anomaly_distribution: AnomalyDistEntry[];
+  ai_narrative: string[];
 }
 
 export interface VizData {

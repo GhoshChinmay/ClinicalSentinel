@@ -49,7 +49,9 @@ class TestQuarantineStrategy:
         assert result["status"] == "success"
         session_dir = _session_dir(session_id)
 
-        quarantine_df = pl.read_parquet(os.path.join(session_dir, "quarantined_data.parquet"))
+        quarantine_df = pl.read_parquet(
+            os.path.join(session_dir, "quarantined_data.parquet")
+        )
         assert len(quarantine_df) > 0, "Quarantine should contain anomalous rows"
 
 
@@ -88,11 +90,13 @@ class TestImputeStrategy:
     def test_impute_all_anomalies_guard(self):
         """If all rows are anomalous, impute should handle gracefully (no clean rows to train on)."""
         # Create a tiny dataset where all rows will likely be flagged
-        df = pl.DataFrame({
-            "a": [1000.0, 2000.0, 3000.0, 4000.0, 5000.0],
-            "b": [100.0, 200.0, 300.0, 400.0, 500.0],
-            "c": ["x", "y", "z", "w", "v"],
-        })
+        df = pl.DataFrame(
+            {
+                "a": [1000.0, 2000.0, 3000.0, 4000.0, 5000.0],
+                "b": [100.0, 200.0, 300.0, 400.0, 500.0],
+                "c": ["x", "y", "z", "w", "v"],
+            }
+        )
         session_id = _setup_detected_session(df)
 
         # Force all rows to be anomalies for this edge case test
@@ -102,7 +106,9 @@ class TestImputeStrategy:
         raw_df.write_parquet(os.path.join(session_dir, "raw_data.parquet"))
 
         result = clean_dataset(session_id, "impute")
-        assert result["status"] == "success", "Impute should not crash when all rows are anomalies"
+        assert (
+            result["status"] == "success"
+        ), "Impute should not crash when all rows are anomalies"
 
 
 class TestUnknownStrategy:
@@ -126,8 +132,12 @@ class TestEngineeredColumnStripping:
 
         forbidden = {"is_anomaly", "AI_Reason", "Threat_Score", "SHAP_Payload"}
         for col in cleaned_df.columns:
-            assert col not in forbidden, f"Internal column '{col}' leaked into cleaned output"
-            assert not col.endswith("_freq"), f"Engineered column '{col}' leaked into cleaned output"
+            assert (
+                col not in forbidden
+            ), f"Internal column '{col}' leaked into cleaned output"
+            assert not col.endswith(
+                "_freq"
+            ), f"Engineered column '{col}' leaked into cleaned output"
 
 
 class TestPIIScrubber:
@@ -153,5 +163,6 @@ class TestPIIScrubber:
 
         if "ssn" in cleaned_df.columns:
             for val in cleaned_df["ssn"].to_list():
-                assert "REDACTED" in str(val) or "-" not in str(val).replace("REDACTED", ""), \
-                    f"Unredacted SSN found: {val}"
+                assert "REDACTED" in str(val) or "-" not in str(val).replace(
+                    "REDACTED", ""
+                ), f"Unredacted SSN found: {val}"

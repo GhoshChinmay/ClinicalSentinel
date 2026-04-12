@@ -3,18 +3,19 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadCloud, Loader2, ShieldCheck, Trash2, Edit, BarChart, Brain, Terminal, AlertOctagon, XCircle, X, ArrowRight, FileCheck } from "lucide-react";
-import api from "@/lib/api";
-import type { UploadResponse } from "@/types/api";
+import api from "@/services/api.service";
+import type { UploadResponse, InsightsDashboardResponse } from "@/types/api";
 
 // Component Imports
-import Detection from "../components/Detection";
-import Clean from "../components/Clean";
-import ReviewEdit from "../components/ReviewEdit";
-import Visualizer from "../components/Visualizer";
-import Insights from "../components/Insights";
-import Query from "../components/Query";
-import Compare from "../components/Compare";
-import ExportReport from "../components/ExportReport";
+import Detection from "@/components/detection";
+import Clean from "@/components/clean";
+import ReviewEdit from "@/components/review-edit";
+import Visualizer from "@/components/visualizer";
+import Insights from "@/components/insights";
+import Query from "@/components/query";
+import Compare from "@/components/compare";
+import ExportReport from "@/components/export-report";
+import PIIModal from "@/components/pii-modal";
 
 // Define the stages of our pipeline
 type PipelineStep = 'upload' | 'detect' | 'insights' | 'clean' | 'compare' | 'edit' | 'visualize' | 'query' | 'report';
@@ -24,29 +25,23 @@ export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // --- Ollama Health Check ---
-  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
+  const [cachedInsights, setCachedInsights] = useState<InsightsDashboardResponse | null>(null);
 
-  // --- Cached Insights (survives tab switches) ---
-  const [cachedInsights, setCachedInsights] = useState<Array<{observation: string; insight: string; action: string}> | null>(null);
-
-  // --- NEW: State for AI Recommended Cleaning ---
   const [recommendedMethod, setRecommendedMethod] = useState<string>('quarantine');
   const [cleaningRationale, setCleaningRationale] = useState<string>('');
 
-  // State to hold the Gatekeeper contract errors
   const [contractErrors, setContractErrors] = useState<string[] | null>(null);
-  // State for general upload errors
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // --- PII State ---
+  const [piiFindings, setPiiFindings] = useState<any[]>([]);
+  const [showPIIModal, setShowPIIModal] = useState(false);
 
-  // --- NEW: Sample Library ---
-  const [samples, setSamples] = useState<Array<{filename: string, name: string, rows: number, anomalies: number, description: string, icon: string}>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [samples, setSamples] = useState<Array<{ filename: string, name: string, rows: number, anomalies: number, description: string, icon: string }>>([]);
 
   useEffect(() => {
     api.get('/api/samples').then(res => setSamples(res.data.samples)).catch(console.error);
-    api.get('/api/health').then(res => setOllamaAvailable(res.data.ollama)).catch(() => setOllamaAvailable(false));
   }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,36 +60,37 @@ export default function Home() {
 
     try {
       const response = await api.post<UploadResponse>("/api/upload/", formData);
-      setSessionId(response.data.session_id);
-      setCachedInsights(null); // Clear stale insights from prior session
+      const sid = response.data.session_id;
+      setSessionId(sid);
+      setCachedInsights(null);
 
-      // --- Capture the AI recommendations from the backend ---
       setRecommendedMethod(response.data.recommended_cleaning || 'quarantine');
       setCleaningRationale(response.data.cleaning_rationale || '');
 
-      // Automatically move to the detection phase once uploaded
-      setCurrentStep('detect');
+      // --- PII SCAN INTEGRATION ---
+      try {
+        const piiRes = await api.get(`/api/pii-scan/${sid}`);
+        if (piiRes.data.pii_detected) {
+          setPiiFindings(piiRes.data.findings);
+          setShowPIIModal(true);
+        } else {
+          setCurrentStep('detect');
+        }
+      } catch (piiErr) {
+        console.error("PII Scan failed, continuing to detection", piiErr);
+        setCurrentStep('detect');
+      }
+
     } catch (err: unknown) {
       const axiosErr = err as {
-        response?: {
-          status?: number;
-          data?: {
-            status?: string;
-            errors?: string[];
-            error?: string;
-          };
-        };
+        response?: { status?: number; data?: { status?: string; errors?: string[]; error?: string; }; };
         message?: string;
       };
-
       const respData = axiosErr.response?.data;
-
       if (axiosErr.response?.status === 400 && respData?.errors?.length) {
-        // Schema validation errors from SchemaEnforcer
         setContractErrors(respData.errors);
       } else {
         const errorMessage = respData?.error || axiosErr.message || "Unknown error occurred";
-        console.error("Upload Error Details:", errorMessage);
         setUploadError(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
       }
     } finally {
@@ -108,27 +104,34 @@ export default function Home() {
     setContractErrors(null);
     try {
       const response = await api.post<UploadResponse>(`/api/load-sample/${filename}`);
-      setSessionId(response.data.session_id);
+      const sid = response.data.session_id;
+      setSessionId(sid);
       setCachedInsights(null);
       setRecommendedMethod(response.data.recommended_cleaning || 'quarantine');
       setCleaningRationale(response.data.cleaning_rationale || '');
-      setCurrentStep('detect');
+
+      // --- PII SCAN INTEGRATION ---
+      try {
+        const piiRes = await api.get(`/api/pii-scan/${sid}`);
+        if (piiRes.data.pii_detected) {
+          setPiiFindings(piiRes.data.findings);
+          setShowPIIModal(true);
+        } else {
+          setCurrentStep('detect');
+        }
+      } catch (piiErr) {
+        setCurrentStep('detect');
+      }
     } catch (err: unknown) {
       const axiosErr = err as {
-        response?: {
-          status?: number;
-          data?: { status?: string; errors?: string[]; error?: string; };
-        };
+        response?: { status?: number; data?: { status?: string; errors?: string[]; error?: string; }; };
         message?: string;
       };
-
       const respData = axiosErr.response?.data;
-
       if (axiosErr.response?.status === 400 && respData?.errors?.length) {
         setContractErrors(respData.errors);
       } else {
         const errorMessage = respData?.error || axiosErr.message || "Unknown error occurred";
-        console.error("Upload Error Details:", errorMessage);
         setUploadError(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
       }
     } finally {
@@ -136,13 +139,12 @@ export default function Home() {
     }
   };
 
-  // The Sleek Top Navigation Bar (REORDERED)
   const renderNav = () => {
     if (currentStep === 'upload') return null;
 
     const steps = [
       { id: 'detect', icon: <ShieldCheck size={16} />, label: 'Detection' },
-      { id: 'insights', icon: <Brain size={16} />, label: 'Insights' }, // Moved before Cleaning
+      { id: 'insights', icon: <Brain size={16} />, label: 'Insights' },
       { id: 'clean', icon: <Trash2 size={16} />, label: 'Cleaning' },
       { id: 'compare', icon: <ArrowRight size={16} />, label: 'Compare' },
       { id: 'edit', icon: <Edit size={16} />, label: 'Edit' },
@@ -174,17 +176,9 @@ export default function Home() {
     <main className="min-h-screen bg-[#050505] text-white flex flex-col font-sans">
       {renderNav()}
 
-      {/* Non-blocking Ollama health warning */}
-      {ollamaAvailable === false && currentStep !== 'upload' && (
-        <div className="w-full bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-center text-amber-400 text-sm font-medium">
-          ⚠ Local LLM (Ollama) is not running. Insights and Query tabs will use static fallbacks.
-        </div>
-      )}
-
       <div className="flex-1 flex flex-col items-center p-6 w-full max-w-6xl mx-auto">
         <AnimatePresence mode="wait">
 
-          {/* STEP 1: LANDING PAGE */}
           {currentStep === 'upload' && (
             <motion.div key="upload" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-2xl mt-20 flex flex-col items-center justify-center min-h-[70vh]">
               <div className="text-center mb-12">
@@ -216,12 +210,12 @@ export default function Home() {
                       <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs font-bold font-mono">.XLSX</span>
                       <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded text-xs font-bold font-mono">.JSON</span>
                     </div>
-                    <p className="text-sm text-neutral-500">Max size: 100MB</p>
+                    {/* UI LIMIT UPDATED HERE */}
+                    <p className="text-sm text-neutral-500">Max size: 500MB</p>
                   </div>
                 )}
               </div>
 
-              {/* Upload Error Banner */}
               {uploadError && (
                 <div className="mt-4 w-full p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start text-red-400">
                   <XCircle className="w-5 h-5 mr-3 shrink-0 mt-0.5" />
@@ -233,7 +227,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* NEW: Sample Datasets */}
               {samples.length > 0 && (
                 <div className="w-full mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
                   <div className="flex justify-between items-end mb-4">
@@ -249,9 +242,8 @@ export default function Home() {
                         className="bg-neutral-900/40 hover:bg-neutral-800/80 border border-neutral-800 p-4 rounded-2xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 group relative overflow-hidden"
                         onClick={() => loadSample(sample.filename)}
                       >
-                        {/* Highlight effect */}
                         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        
+
                         <div className="flex justify-between items-start mb-3 relative z-10">
                           <span className="text-2xl">{sample.icon}</span>
                           <div className="flex flex-col items-end">
@@ -269,7 +261,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 2: DETECTION */}
           {currentStep === 'detect' && (
             <motion.div key="detect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
@@ -277,9 +268,7 @@ export default function Home() {
                 <p className="text-neutral-400">Review the corrupted rows and understand exactly why the AI flagged them.</p>
               </div>
               {sessionId && <Detection key={sessionId} sessionId={sessionId} />}
-
               <div className="mt-8 flex justify-end">
-                {/* Updated flow: Detection -> Insights */}
                 <button onClick={() => setCurrentStep('insights')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
                   Proceed to AI Insights &rarr;
                 </button>
@@ -287,17 +276,14 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 3: INSIGHTS (MOVED HERE) */}
           {currentStep === 'insights' && (
             <motion.div key="insights" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
-                <h2 className="text-2xl font-semibold mb-1">AI Contextual Insights</h2>
-                <p className="text-neutral-400">A structured OIA (Observation, Insight, Action) analysis of your data.</p>
+                <h2 className="text-2xl font-semibold mb-1">Dataset Intelligence Dashboard</h2>
+                <p className="text-neutral-400">AI-powered statistical profiling, correlations, and insights for your data.</p>
               </div>
               {sessionId && <Insights sessionId={sessionId} cachedInsights={cachedInsights} onInsightsLoaded={setCachedInsights} />}
-
               <div className="mt-8 flex justify-end">
-                {/* Added flow: Insights -> Cleaning */}
                 <button onClick={() => setCurrentStep('clean')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
                   Proceed to Smart Cleaning &rarr;
                 </button>
@@ -305,7 +291,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 4: CLEANING */}
           {currentStep === 'clean' && (
             <motion.div key="clean" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-5xl mt-10">
               <div className="mb-6 text-center">
@@ -324,7 +309,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 5: A/B COMPARISON */}
           {currentStep === 'compare' && (
             <motion.div key="compare" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
@@ -332,7 +316,6 @@ export default function Home() {
                 <p className="text-neutral-400">Review the high-fidelity modifications made by the predictive AI imputer.</p>
               </div>
               {sessionId && <Compare key={sessionId} sessionId={sessionId} />}
-
               <div className="mt-8 flex justify-end">
                 <button onClick={() => setCurrentStep('edit')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
                   Proceed to Review & Edit &rarr;
@@ -341,7 +324,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 6: REVIEW & EDIT */}
           {currentStep === 'edit' && (
             <motion.div key="edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
@@ -352,7 +334,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 7: VISUALIZER */}
           {currentStep === 'visualize' && (
             <motion.div key="viz" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
@@ -363,7 +344,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 8: QUERY */}
           {currentStep === 'query' && (
             <motion.div key="query" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               <div className="mb-6">
@@ -371,7 +351,6 @@ export default function Home() {
                 <p className="text-neutral-400">Ask complex questions in English and watch the AI execute them instantly.</p>
               </div>
               {sessionId && <Query key={sessionId} sessionId={sessionId} />}
-
               <div className="mt-8 flex justify-end">
                 <button onClick={() => setCurrentStep('report')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors shadow-lg">
                   Final Quality Report &rarr;
@@ -380,7 +359,6 @@ export default function Home() {
             </motion.div>
           )}
 
-          {/* STEP 9: REPORT & EXPORT */}
           {currentStep === 'report' && (
             <motion.div key="report" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
               {sessionId && <ExportReport key={sessionId} sessionId={sessionId} />}
@@ -438,6 +416,24 @@ export default function Home() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- PII MODAL INTEGRATION --- */}
+      <AnimatePresence>
+        {showPIIModal && piiFindings.length > 0 && sessionId && (
+          <PIIModal
+            sessionId={sessionId}
+            findings={piiFindings}
+            onDismiss={() => {
+              setShowPIIModal(false);
+              setCurrentStep('detect');
+            }}
+            onPseudonymised={(cols) => {
+              setShowPIIModal(false);
+              setCurrentStep('detect');
+            }}
+          />
         )}
       </AnimatePresence>
 

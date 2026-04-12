@@ -1,15 +1,18 @@
 """
-DataSentinel — Natural Language Query Engine
-Translates English to SQL via Ollama/Llama3 and executes against DuckDB.
+DataSentinel — Natural Language Query Engine (Groq Cloud-Accelerated)
+Translates English to SQL via Groq/Llama 3.3 70B and executes against DuckDB.
+
+PRIVACY GUARANTEE: Only the schema string and user query text are sent to Groq.
+Raw row data never leaves the local machine.
 """
 
 import os
 import re
 import polars as pl
-import ollama
 import duckdb
 
 from utils import _session_dir, logger
+from groq_client import groq_chat, MODEL_REASONING
 
 
 def _sanitize_llm_sql(raw_response: str) -> str:
@@ -37,6 +40,11 @@ def _force_try_cast(sql: str) -> str:
     """Replace all CAST(...) with TRY_CAST(...) to prevent DuckDB conversion errors on dirty data."""
     result = re.sub(r"\bCAST\s*\(", "TRY_CAST(", sql, flags=re.IGNORECASE)
     result = result.replace("TRY_TRY_CAST", "TRY_CAST")
+    # Fix pythonic/Polars types that duckdb rejects
+    result = re.sub(r"\bFLOAT64\b", "DOUBLE", result, flags=re.IGNORECASE)
+    result = re.sub(r"\bINT64\b", "BIGINT", result, flags=re.IGNORECASE)
+    result = re.sub(r"\bFLOAT32\b", "FLOAT", result, flags=re.IGNORECASE)
+    result = re.sub(r"\bINT32\b", "INTEGER", result, flags=re.IGNORECASE)
     return result
 
 
@@ -61,7 +69,9 @@ def execute_natural_query(session_id: str, user_query: str, is_edit: bool = Fals
                 sample = df[col].drop_nulls()
                 if len(sample) > 0:
                     try:
-                        stripped = sample.str.replace_all(r"[₹$€£¥,%\s]", "").str.strip_chars()
+                        stripped = sample.str.replace_all(
+                            r"[₹$€£¥,%\s]", ""
+                        ).str.strip_chars()
                         numeric_count = stripped.str.contains(r"^-?\d+\.?\d*$").sum()
                         numeric_ratio = numeric_count / len(sample)
                         if numeric_ratio > 0.3:
@@ -83,6 +93,7 @@ CRITICAL RULES:
 3. When filtering on numeric conditions for string columns, use: TRY_CAST(column AS DOUBLE) IS NOT NULL AND TRY_CAST(column AS DOUBLE) < value
 4. Handle NULL values gracefully — never assume a column is clean.
 5. Use LIMIT 100 for SELECT queries unless the user explicitly asks for all results.
+6. Use standard SQL types for casting (e.g. DOUBLE, BIGINT, VARCHAR, BOOLEAN). Do not use Polars types like Float64 or Int64.
 """
 
         if is_edit:
@@ -90,11 +101,19 @@ CRITICAL RULES:
         else:
             system_prompt += "\nReturn ONLY a valid SQL SELECT statement. You are a machine. Do NOT output conversational text. Start your response strictly with the word SELECT. Do NOT include a trailing semicolon."
 
-        response = ollama.chat(model="llama3:latest", messages=[{"role": "system", "content": system_prompt}])
-        # H-04 FIX: ollama ≥0.2.0 returns a Pydantic ChatResponse object, NOT a dict.
-        # Use attribute access (.message.content) to be compatible with both old and new versions.
-        raw_response_obj = response["message"]["content"] if isinstance(response, dict) else response.message.content
-        raw_response = raw_response_obj.strip()
+        # ── Groq Cloud inference (schema only — no row data sent) ─────────
+        raw_response = groq_chat(
+            messages=[{"role": "system", "content": system_prompt}],
+            model=MODEL_REASONING,
+            temperature=0.1,
+            max_tokens=1024,
+            timeout=15,
+        )
+
+        if raw_response is None:
+            return {
+                "error": "AI query generation failed. Groq API may be unavailable or GROQ_API_KEY is not set."
+            }
 
         sql_query = _sanitize_llm_sql(raw_response)
         sql_query = _force_try_cast(sql_query)
@@ -104,7 +123,9 @@ CRITICAL RULES:
         if is_edit:
             upper = sql_query.strip().upper()
             if not upper.startswith("UPDATE") and not upper.startswith("DELETE"):
-                return {"error": f"Expected UPDATE or DELETE statement, got: {sql_query[:50]}..."}
+                return {
+                    "error": f"Expected UPDATE or DELETE statement, got: {sql_query[:50]}..."
+                }
             return {"sql": sql_query}
         else:
             upper = sql_query.strip().upper()
@@ -115,12 +136,20 @@ CRITICAL RULES:
                 con = duckdb.connect()
                 con.execute(f"CREATE VIEW my_table AS SELECT * FROM '{data_path}'")
                 result_df = con.query(sql_query).pl()
-                return {"sql": sql_query, "columns": result_df.columns, "data": result_df.head(100).to_dicts()}
+                return {
+                    "sql": sql_query,
+                    "columns": result_df.columns,
+                    "data": result_df.head(100).to_dicts(),
+                }
             except Exception as e:
                 error_str = str(e)
                 if "Conversion Error" in error_str:
-                    return {"error": f"Type conversion error — a column contains mixed data types. SQL: {sql_query} | Hint: Use TRY_CAST instead of CAST. | DuckDB: {error_str}"}
-                return {"error": f"Failed to execute. SQL: {sql_query} | Error: {error_str}"}
+                    return {
+                        "error": f"Type conversion error — a column contains mixed data types. SQL: {sql_query} | Hint: Use TRY_CAST instead of CAST. | DuckDB: {error_str}"
+                    }
+                return {
+                    "error": f"Failed to execute. SQL: {sql_query} | Error: {error_str}"
+                }
             finally:
                 if con:
                     con.close()
@@ -145,10 +174,12 @@ def confirm_and_execute_edit(session_id: str, sql_query: str):
         # BUG-09 FIX: SQL injection guard — block dangerous DDL/DML and multi-statement injection
         _FORBIDDEN_PATTERNS = re.compile(
             r"\b(DROP|CREATE|ALTER|COPY|ATTACH|DETACH|PRAGMA|VACUUM|ANALYZE|GRANT|REVOKE|TRUNCATE)\b",
-            re.IGNORECASE
+            re.IGNORECASE,
         )
         if _FORBIDDEN_PATTERNS.search(clean_sql):
-            return {"error": "Forbidden SQL statement type. Only UPDATE and DELETE are permitted."}
+            return {
+                "error": "Forbidden SQL statement type. Only UPDATE and DELETE are permitted."
+            }
         if ";" in clean_sql:
             return {"error": "Multi-statement SQL is not allowed."}
 
@@ -196,7 +227,9 @@ def confirm_and_execute_edit(session_id: str, sql_query: str):
     except Exception as e:
         error_str = str(e)
         if "Conversion Error" in error_str:
-            return {"error": f"Type conversion error on dirty data. Hint: The column contains mixed types (text + numbers). DuckDB: {error_str}"}
+            return {
+                "error": f"Type conversion error on dirty data. Hint: The column contains mixed types (text + numbers). DuckDB: {error_str}"
+            }
         return {"error": error_str}
     finally:
         if con:

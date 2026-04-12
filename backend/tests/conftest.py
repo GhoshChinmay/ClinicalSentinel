@@ -34,34 +34,40 @@ def numeric_df() -> pl.DataFrame:
     ages = np.concatenate([np.random.randint(18, 65, n - 3), [200, 210, 220]])
     scores = np.concatenate([np.random.uniform(0, 1, n - 3), [99, 98, 97]])
 
-    return pl.DataFrame({
-        "amount": amounts.tolist(),
-        "age": [int(a) for a in ages.tolist()],
-        "score": scores.tolist(),
-        "category": (["A"] * 80 + ["B"] * 60 + ["C"] * 57 + ["ZZRARE"] * 3),
-    })
+    return pl.DataFrame(
+        {
+            "amount": amounts.tolist(),
+            "age": [int(a) for a in ages.tolist()],
+            "score": scores.tolist(),
+            "category": (["A"] * 80 + ["B"] * 60 + ["C"] * 57 + ["ZZRARE"] * 3),
+        }
+    )
 
 
 @pytest.fixture
 def text_df() -> pl.DataFrame:
     """A DataFrame with text columns to exercise the NLP bridge."""
-    return pl.DataFrame({
-        "review": [
-            "Great product, highly recommend!",
-            "Terrible quality, fell apart after one use.",
-            "Average item, nothing special.",
-            "BEST THING EVER 10/10 WOULD BUY AGAIN!!!",
-            "decent",
-        ] * 25,  # 125 rows (> 100 for TF-IDF to fire)
-        "rating": [5, 1, 3, 5, 3] * 25,
-        "price": [29.99, 15.00, 22.50, 45.00, 18.75] * 25,
-    })
+    return pl.DataFrame(
+        {
+            "review": [
+                "Great product, highly recommend!",
+                "Terrible quality, fell apart after one use.",
+                "Average item, nothing special.",
+                "BEST THING EVER 10/10 WOULD BUY AGAIN!!!",
+                "decent",
+            ]
+            * 25,  # 125 rows (> 100 for TF-IDF to fire)
+            "rating": [5, 1, 3, 5, 3] * 25,
+            "price": [29.99, 15.00, 22.50, 45.00, 18.75] * 25,
+        }
+    )
 
 
 @pytest.fixture
 def financial_df() -> pl.DataFrame:
     """A DataFrame with datetime + entity ID columns to test the Velocity Engine."""
     from datetime import datetime, timedelta
+
     np.random.seed(42)
     n = 100
     base_ts = datetime(2025, 1, 1)
@@ -74,26 +80,30 @@ def financial_df() -> pl.DataFrame:
         user_ids[i] = "USR-000"
         amounts[i] = 5000.0  # extreme values
 
-    return pl.DataFrame({
-        "transaction_date": timestamps,
-        "user_id": user_ids,
-        "amount": amounts,
-        "merchant": ["Shop A"] * 50 + ["Shop B"] * 45 + ["SUSPICIOUS_CORP"] * 5,
-    })
+    return pl.DataFrame(
+        {
+            "transaction_date": timestamps,
+            "user_id": user_ids,
+            "amount": amounts,
+            "merchant": ["Shop A"] * 50 + ["Shop B"] * 45 + ["SUSPICIOUS_CORP"] * 5,
+        }
+    )
 
 
 @pytest.fixture
 def pii_df() -> pl.DataFrame:
     """A DataFrame with PII data (email, SSN) to test the scrubber."""
-    return pl.DataFrame({
-        "name": ["Alice", "Bob", "Charlie"],
-        "email": ["alice@example.com", "bob@test.org", "charlie@corp.net"],
-        "ssn": ["123-45-6789", "987-65-4321", "555-12-3456"],
-        "amount": [100.0, 200.0, 300.0],
-        "is_anomaly": [True, False, True],
-        "Threat_Score": [80.0, 10.0, 75.0],
-        "AI_Reason": ["Test reason", "", "Another reason"],
-    })
+    return pl.DataFrame(
+        {
+            "name": ["Alice", "Bob", "Charlie"],
+            "email": ["alice@example.com", "bob@test.org", "charlie@corp.net"],
+            "ssn": ["123-45-6789", "987-65-4321", "555-12-3456"],
+            "amount": [100.0, 200.0, 300.0],
+            "is_anomaly": [True, False, True],
+            "Threat_Score": [80.0, 10.0, 75.0],
+            "AI_Reason": ["Test reason", "", "Another reason"],
+        }
+    )
 
 
 @pytest.fixture
@@ -114,6 +124,7 @@ def session_with_data(numeric_df, tmp_path):
     session_path.mkdir(parents=True)
 
     from engines.detection import process_and_detect
+
     result = process_and_detect(df=numeric_df, session_id=session_id)
 
     return session_id, result

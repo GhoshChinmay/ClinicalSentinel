@@ -39,13 +39,13 @@ class TestRootEndpoint:
 
 
 class TestHealthEndpoint:
-    def test_health_returns_ollama_status(self, client):
+    def test_health_returns_groq_status(self, client):
         response = client.get("/api/health")
         assert response.status_code == 200
         data = response.json()
-        assert "ollama" in data
-        assert isinstance(data["ollama"], bool)
-        assert "models" in data
+        assert "groq" in data
+        assert isinstance(data["groq"], bool)
+        assert "engine" in data
 
 
 class TestUploadEndpoint:
@@ -61,10 +61,10 @@ class TestUploadEndpoint:
         assert "anomaly_count" in data
 
     def test_upload_too_large_rejected(self, client):
-        """Files over 100MB should be rejected."""
-        # Generate a >100MB payload. We use a smaller synthetic one but patch the limit.
-        # In practice, a real 100MB+ file would be needed, but we test the logic.
-        large_content = b"x" * (101 * 1024 * 1024)
+        """Files over 500MB should be rejected."""
+        # Generate a >500MB payload. We use a smaller synthetic one but patch the limit.
+        # In practice, a real 500MB+ file would be needed, but we test the logic.
+        large_content = b"x" * (501 * 1024 * 1024)
         response = client.post(
             "/api/upload/",
             files={"file": ("huge.csv", large_content, "text/csv")},

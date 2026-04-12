@@ -31,7 +31,8 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
     elif action == "winsorize":
         numeric_cols = [
-            col for col, dtype in zip(df.columns, df.dtypes)
+            col
+            for col, dtype in zip(df.columns, df.dtypes)
             if dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]
         ]
         normal_data = df.filter(pl.col("is_anomaly") == False)
@@ -60,7 +61,8 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
     elif action == "mask":
         string_cols = [
-            col for col, dtype in zip(df.columns, df.dtypes)
+            col
+            for col, dtype in zip(df.columns, df.dtypes)
             if "String" in str(dtype) or "Utf8" in str(dtype)
         ]
 
@@ -76,14 +78,20 @@ def clean_dataset(session_id: str, action: str = "drop"):
                 numeric_count = stripped.str.contains(r"^-?\d+\.?\d*$").sum()
                 numeric_ratio = numeric_count / len(sample)
                 if numeric_ratio > 0.5:
-                    logger.info("[MASK SAFEGUARD] Skipping column '%s' — %.0f%% numeric content detected.", col, numeric_ratio * 100)
+                    logger.info(
+                        "[MASK SAFEGUARD] Skipping column '%s' — %.0f%% numeric content detected.",
+                        col,
+                        numeric_ratio * 100,
+                    )
                     continue
                 safe_text_cols.append(col)
             except Exception:
                 safe_text_cols.append(col)
 
         if not safe_text_cols:
-            logger.info("[MASK SAFEGUARD] No safe text columns found. Falling back to quarantine.")
+            logger.info(
+                "[MASK SAFEGUARD] No safe text columns found. Falling back to quarantine."
+            )
             quarantined_df = df.filter(pl.col("is_anomaly") == True)
             if len(quarantined_df) > 0:
                 quarantined_df.write_parquet(f"{session_dir}/quarantined_data.parquet")
@@ -102,11 +110,16 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
     elif action == "impute":
         numeric_cols = [
-            col for col, dtype in zip(df.columns, df.dtypes)
+            col
+            for col, dtype in zip(df.columns, df.dtypes)
             if dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]
         ]
 
-        target_cols = [c for c in numeric_cols if c not in ["is_anomaly", "Threat_Score"] and not c.endswith("_freq")]
+        target_cols = [
+            c
+            for c in numeric_cols
+            if c not in ["is_anomaly", "Threat_Score"] and not c.endswith("_freq")
+        ]
 
         if target_cols:
             logger.info("Running K-Nearest Neighbors Predictive Imputation...")
@@ -119,15 +132,19 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
             # H-03 FIX: Guard against all-anomaly datasets where clean_mask is empty
             if not clean_mask.any():
-                logger.warning("[IMPUTE] All rows flagged as anomalies — no clean rows to train KNN on. Skipping imputation.")
+                logger.warning(
+                    "[IMPUTE] All rows flagged as anomalies — no clean rows to train KNN on. Skipping imputation."
+                )
             else:
                 for col in target_cols:
                     pandas_df.loc[anomaly_mask, col] = np.nan
 
                 imputer = KNNImputer(n_neighbors=5, weights="distance")
                 imputer.fit(pandas_df.loc[clean_mask, target_cols])
-                
-                pandas_df.loc[anomaly_mask, target_cols] = imputer.transform(pandas_df.loc[anomaly_mask, target_cols])
+
+                pandas_df.loc[anomaly_mask, target_cols] = imputer.transform(
+                    pandas_df.loc[anomaly_mask, target_cols]
+                )
 
                 for col in target_cols:
                     df = df.with_columns(pl.Series(name=col, values=pandas_df[col]))
@@ -138,13 +155,20 @@ def clean_dataset(session_id: str, action: str = "drop"):
         return {"error": f"Unknown cleaning action: {action}"}
 
     # Strip ALL engineered columns from the final output
-    engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+    engineered_suffixes = (
+        "_freq",
+        "_length",
+        "_digit_ratio",
+        "_upper_ratio",
+        "_special_ratio",
+    )
     engineered_prefixes = ("nlp_pc",)
     velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
     always_drop = {"is_anomaly", "AI_Reason", "Threat_Score", "SHAP_Payload"}
 
     cols_to_drop = [
-        c for c in cleaned_df.columns
+        c
+        for c in cleaned_df.columns
         if c in always_drop
         or c.endswith(engineered_suffixes)
         or any(c.startswith(p) for p in engineered_prefixes)
@@ -155,21 +179,25 @@ def clean_dataset(session_id: str, action: str = "drop"):
     # ── GDPR PII SCRUBBER BEFORE EXPORT ──
     try:
         string_cols = [
-            col for col, dtype in zip(cleaned_df.columns, cleaned_df.dtypes)
+            col
+            for col, dtype in zip(cleaned_df.columns, cleaned_df.dtypes)
             if dtype in [pl.Utf8, getattr(pl, "String", pl.Utf8)]
         ]
-        
+
         pii_exprs = []
         for col in string_cols:
             expr = (
                 pl.col(col)
-                .str.replace_all(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[REDACTED_EMAIL]')
-                .str.replace_all(r'\b\d{3}-\d{2}-\d{4}\b', '[REDACTED_SSN]')
-                .str.replace_all(r'\b(?:\d[ -]*?){13,16}\b', '[REDACTED_CC]')
+                .str.replace_all(
+                    r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
+                    "[REDACTED_EMAIL]",
+                )
+                .str.replace_all(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]")
+                .str.replace_all(r"\b(?:\d[ -]*?){13,16}\b", "[REDACTED_CC]")
                 .alias(col)
             )
             pii_exprs.append(expr)
-            
+
         if pii_exprs:
             cleaned_df = cleaned_df.with_columns(pii_exprs)
             logger.info("PII Scrubber applied to %d string columns.", len(string_cols))

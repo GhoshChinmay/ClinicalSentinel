@@ -9,6 +9,7 @@ from engines.visualization import get_viz_data
 from engines.insights import generate_insights
 from engines.query import execute_natural_query, confirm_and_execute_edit
 from engines.quality import generate_quality_report
+from engines.pii_scanner import scan_for_pii, pseudonymise_columns
 
 __all__ = [
     "process_and_detect",
@@ -18,4 +19,6 @@ __all__ = [
     "execute_natural_query",
     "confirm_and_execute_edit",
     "generate_quality_report",
+    "scan_for_pii",
+    "pseudonymise_columns",
 ]

@@ -22,6 +22,7 @@ class TestBasicDetection:
 
         session_id = result["session_id"]
         from utils import _session_dir
+
         session_dir = _session_dir(session_id)
         df = pl.read_parquet(f"{session_dir}/raw_data.parquet")
 
@@ -31,7 +32,9 @@ class TestBasicDetection:
     def test_detects_anomalies(self, numeric_df):
         """With injected outliers, at least some anomalies should be detected."""
         result = process_and_detect(df=numeric_df)
-        assert result["anomaly_count"] > 0, "Expected at least 1 anomaly from injected outliers"
+        assert (
+            result["anomaly_count"] > 0
+        ), "Expected at least 1 anomaly from injected outliers"
 
     def test_total_rows_matches(self, numeric_df):
         """Total rows in result should match (after dedup) the input."""
@@ -41,11 +44,13 @@ class TestBasicDetection:
 
     def test_deduplication(self):
         """Duplicate rows should be removed."""
-        df = pl.DataFrame({
-            "a": [1, 1, 2, 3, 4],
-            "b": [10, 10, 20, 30, 40],
-            "c": ["x", "x", "y", "z", "w"],
-        })
+        df = pl.DataFrame(
+            {
+                "a": [1, 1, 2, 3, 4],
+                "b": [10, 10, 20, 30, 40],
+                "c": ["x", "x", "y", "z", "w"],
+            }
+        )
         result = process_and_detect(df=df)
         assert result["total_rows"] == 4, "Expected 4 rows after dedup"
 
@@ -63,6 +68,7 @@ class TestSHAPExplainability:
         """Every anomaly row should have a non-empty SHAP payload."""
         result = process_and_detect(df=numeric_df)
         from utils import _session_dir
+
         session_dir = _session_dir(result["session_id"])
         df = pl.read_parquet(f"{session_dir}/raw_data.parquet")
 
@@ -82,6 +88,7 @@ class TestVelocityEngine:
         """Financial data with datetime + entity ID should trigger velocity features."""
         result = process_and_detect(df=financial_df)
         from utils import _session_dir
+
         session_dir = _session_dir(result["session_id"])
         df = pl.read_parquet(f"{session_dir}/raw_data.parquet")
 
@@ -92,6 +99,7 @@ class TestVelocityEngine:
         """Without a time column, velocity columns should NOT be added."""
         result = process_and_detect(df=numeric_df)
         from utils import _session_dir
+
         session_dir = _session_dir(result["session_id"])
         df = pl.read_parquet(f"{session_dir}/raw_data.parquet")
 
@@ -117,11 +125,13 @@ class TestNLPBridge:
 
     def test_tfidf_skipped_for_small_datasets(self):
         """With < 100 rows, TF-IDF should be skipped."""
-        small_df = pl.DataFrame({
-            "text": ["hello"] * 50,
-            "value": list(range(50)),
-            "cat": ["A"] * 50,
-        })
+        small_df = pl.DataFrame(
+            {
+                "text": ["hello"] * 50,
+                "value": list(range(50)),
+                "cat": ["A"] * 50,
+            }
+        )
         result_df = process_text_anomalies(small_df)
         assert "nlp_pc1" not in result_df.columns
 
@@ -133,6 +143,7 @@ class TestAIReasonGenerator:
         """Every anomaly should have a non-empty AI_Reason."""
         result = process_and_detect(df=numeric_df)
         from utils import _session_dir
+
         session_dir = _session_dir(result["session_id"])
         df = pl.read_parquet(f"{session_dir}/raw_data.parquet")
 
@@ -144,6 +155,7 @@ class TestAIReasonGenerator:
         """AI reasons should be dynamic per-row, not the same generic text for every anomaly."""
         result = process_and_detect(df=numeric_df)
         from utils import _session_dir
+
         session_dir = _session_dir(result["session_id"])
         df = pl.read_parquet(f"{session_dir}/raw_data.parquet")
 
@@ -162,6 +174,7 @@ class TestAIReasonGenerator:
         """AI reasons should reference actual column values for specificity."""
         result = process_and_detect(df=numeric_df)
         from utils import _session_dir
+
         session_dir = _session_dir(result["session_id"])
         df = pl.read_parquet(f"{session_dir}/raw_data.parquet")
 
@@ -170,7 +183,9 @@ class TestAIReasonGenerator:
 
         # At least some reasons should contain numeric values (actual data points)
         has_numbers = sum(1 for r in reasons if any(c.isdigit() for c in r))
-        assert has_numbers > 0, "No reasons contain actual numeric values — they should be data-specific"
+        assert (
+            has_numbers > 0
+        ), "No reasons contain actual numeric values — they should be data-specific"
 
 
 class TestCleaningRecommendation:

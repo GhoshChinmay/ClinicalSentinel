@@ -69,6 +69,7 @@ class TestSQLInjectionGuard:
     def test_drop_table_blocked(self, numeric_df):
         """DDL statements like DROP should be rejected."""
         from engines.detection import process_and_detect
+
         result = process_and_detect(df=numeric_df)
         session_id = result["session_id"]
 
@@ -78,6 +79,7 @@ class TestSQLInjectionGuard:
 
     def test_create_table_blocked(self, numeric_df):
         from engines.detection import process_and_detect
+
         result = process_and_detect(df=numeric_df)
         session_id = result["session_id"]
 
@@ -86,12 +88,14 @@ class TestSQLInjectionGuard:
 
     def test_multi_statement_blocked(self, numeric_df):
         from engines.detection import process_and_detect
+
         result = process_and_detect(df=numeric_df)
         session_id = result["session_id"]
 
         # Use two UPDATE statements (both individually valid) to test the semicolon guard
         edit_result = confirm_and_execute_edit(
-            session_id, "UPDATE my_table SET amount=1 WHERE amount > 100; UPDATE my_table SET amount=2"
+            session_id,
+            "UPDATE my_table SET amount=1 WHERE amount > 100; UPDATE my_table SET amount=2",
         )
         assert "error" in edit_result
         assert "Multi-statement" in edit_result["error"]

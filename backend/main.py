@@ -7,6 +7,7 @@ import os
 
 # Load .env file before anything else reads environment variables
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Bypass Loky/Joblib CPU counting bug on Windows that causes ValueError: 0 physical cores < 1
@@ -27,7 +28,13 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from utils import _session_dir, _BACKEND_DIR, logger, validate_session_id, cleanup_stale_sessions
+from utils import (
+    _session_dir,
+    _BACKEND_DIR,
+    logger,
+    validate_session_id,
+    cleanup_stale_sessions,
+)
 from schema import SchemaEnforcer
 from auth import require_api_key, is_auth_enabled
 from engines import (
@@ -37,7 +44,9 @@ from engines import (
     generate_insights,
     execute_natural_query,
     confirm_and_execute_edit,
-    generate_quality_report
+    generate_quality_report,
+    scan_for_pii,
+    pseudonymise_columns,
 )
 
 # --- RATE LIMITER (in-memory, per-IP) ----------------------------------------
@@ -52,26 +61,32 @@ logger.info(
     "ENABLED (DS_API_KEY is set)" if is_auth_enabled() else "DISABLED (no DS_API_KEY)",
 )
 
+
 class FeedbackRequest(BaseModel):
     session_id: str
     row_data: dict
     is_correct: bool
 
+
 @app.post("/api/feedback/", dependencies=[Depends(require_api_key)])
 @limiter.limit("120/minute")
 def submit_feedback(request: Request, payload: FeedbackRequest):
     import json
+
     feedback_file = os.path.join(_BACKEND_DIR, "data", "feedback.jsonl")
     os.makedirs(os.path.dirname(feedback_file), exist_ok=True)
     # H-01 FIX: Prevent oversized row_data from being written to disk (DoS via write amplification)
     payload_bytes = json.dumps(payload.row_data).encode()
     MAX_FEEDBACK_BYTES = 64 * 1024  # 64 KB per feedback entry is more than enough
     if len(payload_bytes) > MAX_FEEDBACK_BYTES:
-        return JSONResponse(status_code=413, content={"error": "Feedback payload too large."})
+        return JSONResponse(
+            status_code=413, content={"error": "Feedback payload too large."}
+        )
     with open(feedback_file, "a") as f:
         # BUG-08 FIX: .dict() is deprecated in Pydantic v2; use .model_dump()
         f.write(json.dumps(payload.model_dump()) + "\n")
     return {"status": "success"}
+
 
 # --- CORS: environment-based whitelist instead of wildcard ---
 _ALLOWED_ORIGINS = os.getenv(
@@ -95,16 +110,11 @@ def root():
 
 @app.get("/api/health")
 def health_check():
-    """Probe Ollama and return its availability status for the frontend."""
-    import requests as _requests
-    try:
-        resp = _requests.get("http://localhost:11434/api/tags", timeout=3)
-        if resp.status_code == 200:
-            models = [m.get("name", "") for m in resp.json().get("models", [])]
-            return {"ollama": True, "models": models}
-        return {"ollama": False, "models": []}
-    except Exception:
-        return {"ollama": False, "models": []}
+    """Verify Groq Cloud API connectivity for the frontend."""
+    from groq_client import check_groq_connectivity
+
+    connected = check_groq_connectivity()
+    return {"groq": connected, "engine": "Groq LPU Cloud"}
 
 
 @app.post("/api/upload/", dependencies=[Depends(require_api_key)])
@@ -122,12 +132,18 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
 
     try:
         contents = await file.read()
-        # SAFE-01 FIX: Reject files over 100MB before writing to disk (prevents OOM)
-        MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+
+        # --- INCREASED LIMIT: 100MB -> 500MB ---
+        # SAFE-01 FIX: Reject files over 500MB before writing to disk (prevents OOM)
+        MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
         if len(contents) > MAX_UPLOAD_BYTES:
-            return JSONResponse(status_code=413, content={
-                "error": f"File too large ({len(contents) // (1024*1024)} MB). Maximum upload size is 100 MB."
-            })
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "error": f"File too large ({len(contents) // (1024*1024)} MB). Maximum upload size is 500 MB."
+                },
+            )
+
         with open(temp_file_path, "wb") as f:
             f.write(contents)
 
@@ -138,18 +154,20 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
         if filename_lower.endswith((".xlsx", ".xls")):
             try:
                 import pandas as pd
+
                 pandas_df = pd.read_excel(temp_file_path, engine="openpyxl")
                 df = pl.from_pandas(pandas_df)
                 logger.info("Parsed Excel file: %s", file.filename)
             except Exception as e:
-                return JSONResponse(status_code=400, content={
-                    "error": f"Excel parse failed: {str(e)}"
-                })
+                return JSONResponse(
+                    status_code=400, content={"error": f"Excel parse failed: {str(e)}"}
+                )
 
         elif filename_lower.endswith(".json"):
             try:
                 import json
                 import pandas as pd
+
                 with open(temp_file_path, "r") as jf:
                     raw = json.load(jf)
                 if isinstance(raw, list):
@@ -161,14 +179,17 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
                             df = pl.from_pandas(pd.DataFrame(raw[key]))
                             break
                 if df is None:
-                    return JSONResponse(status_code=400, content={
-                        "error": "JSON must be an array of objects or {data: [...]}."
-                    })
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "error": "JSON must be an array of objects or {data: [...]}."
+                        },
+                    )
                 logger.info("Parsed JSON file: %s", file.filename)
             except Exception as e:
-                return JSONResponse(status_code=400, content={
-                    "error": f"JSON parse failed: {str(e)}"
-                })
+                return JSONResponse(
+                    status_code=400, content={"error": f"JSON parse failed: {str(e)}"}
+                )
 
         else:
             # Default: CSV with resilient fallback
@@ -177,11 +198,13 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
             except Exception:
                 try:
                     import pandas as pd
+
                     df = pl.from_pandas(pd.read_csv(temp_file_path, low_memory=False))
                 except Exception as inner_e:
-                    return JSONResponse(status_code=500, content={
-                        "error": f"Fatal read error: {str(inner_e)}"
-                    })
+                    return JSONResponse(
+                        status_code=500,
+                        content={"error": f"Fatal read error: {str(inner_e)}"},
+                    )
 
         validation = SchemaEnforcer.validate(df, dataset_name=file.filename)
         if not validation["valid"]:
@@ -200,6 +223,62 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
     finally:
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+
+
+# ── NEW: PII SCANNER ROUTES ──────────────────────────────────────────────────
+@app.get("/api/pii-scan/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("120/minute")
+def pii_scan(request: Request, session_id: str):
+    """Run PII detection on the uploaded dataset before analysis."""
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    session_dir = _session_dir(session_id)
+    raw_path = f"{session_dir}/raw_data.parquet"
+
+    if not os.path.exists(raw_path):
+        return JSONResponse(status_code=404, content={"error": "Dataset not found"})
+
+    df = pl.read_parquet(raw_path)
+    findings = scan_for_pii(df)
+    return {"findings": findings, "pii_detected": len(findings) > 0}
+
+
+@app.post("/api/pseudonymise/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("60/minute")
+def pseudonymise(request: Request, session_id: str, columns: list[str]):
+    """Hash-pseudonymise specified PII columns in the stored dataset."""
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    session_dir = _session_dir(session_id)
+    raw_path = f"{session_dir}/raw_data.parquet"
+
+    if not os.path.exists(raw_path):
+        return JSONResponse(status_code=404, content={"error": "Dataset not found"})
+
+    df = pl.read_parquet(raw_path)
+    df = pseudonymise_columns(df, columns)
+
+    # Overwrite the raw data with the safe, hashed version
+    df.write_parquet(raw_path)
+
+    # Re-run detection to update anomaly scores with hashed data
+    result = process_and_detect(df=df, session_id=session_id)
+
+    return {
+        "status": "success",
+        "pseudonymised_columns": columns,
+        "message": f"Salted SHA-256 pseudonymisation applied to {len(columns)} columns.",
+        "detection_result": result,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 @app.get("/api/data/{session_id}", dependencies=[Depends(require_api_key)])
@@ -231,11 +310,11 @@ def get_data(
     total_anomalies = 0
     if "is_anomaly" in df.columns:
         anomalies = df.filter(pl.col("is_anomaly") == True)
-        
+
         # Sort anomalies by Threat_Score descending so that the top severe ones (which have SHAP/AI reasoning) appear first on the UI
         if "Threat_Score" in anomalies.columns:
             anomalies = anomalies.sort("Threat_Score", descending=True)
-            
+
         total_anomalies = len(anomalies)
         if only_anomalies:
             df = anomalies
@@ -248,7 +327,7 @@ def get_data(
     return {
         "data": df.to_dicts(),
         "total_anomalies": total_anomalies,
-        "total_rows": total_rows, # To let frontend know actual count
+        "total_rows": total_rows,  # To let frontend know actual count
     }
 
 
@@ -279,10 +358,15 @@ def compare_data(request: Request, session_id: str):
     clean_path = f"{session_dir}/cleaned_data.parquet"
 
     if not os.path.exists(clean_path):
-        return JSONResponse(status_code=400, content={"error": "No cleaned data found."})
+        return JSONResponse(
+            status_code=400, content={"error": "No cleaned data found."}
+        )
     # SAFE-03 FIX: Also verify the raw data file exists before reading it
     if not os.path.exists(raw_path):
-        return JSONResponse(status_code=400, content={"error": "Raw dataset not found. Session may be corrupted."})
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Raw dataset not found. Session may be corrupted."},
+        )
 
     df_raw = pl.read_parquet(raw_path)
     df_clean = pl.read_parquet(clean_path)
@@ -290,12 +374,19 @@ def compare_data(request: Request, session_id: str):
     is_dropped = len(df_clean) < len(df_raw)
 
     internal_cols = {"is_anomaly", "Threat_Score", "AI_Reason"}
-    engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+    engineered_suffixes = (
+        "_freq",
+        "_length",
+        "_digit_ratio",
+        "_upper_ratio",
+        "_special_ratio",
+    )
     engineered_prefixes = ("nlp_pc",)
     velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
 
     cols_to_drop = [
-        c for c in df_raw.columns
+        c
+        for c in df_raw.columns
         if c in internal_cols
         or c.endswith(engineered_suffixes)
         or any(c.startswith(p) for p in engineered_prefixes)
@@ -338,6 +429,7 @@ def insights(request: Request, session_id: str):
         return JSONResponse(status_code=400, content=result)
     return result
 
+
 @app.get("/api/report/{session_id}", dependencies=[Depends(require_api_key)])
 @limiter.limit("20/minute")
 def report(request: Request, session_id: str):
@@ -370,17 +462,26 @@ def download_data(request: Request, session_id: str, source: str = Query("cleane
         csv_filename = "cleaned_data.csv"
 
     if not os.path.exists(parquet_path):
-        return JSONResponse(status_code=404, content={"error": f"No {source} data found."})
+        return JSONResponse(
+            status_code=404, content={"error": f"No {source} data found."}
+        )
 
     df = pl.read_parquet(parquet_path)
 
     # SAFE-04 FIX: Strip ALL internal/engineered columns (not just is_anomaly/Threat_Score/AI_Reason)
     internal_cols_set = {"is_anomaly", "Threat_Score", "AI_Reason", "SHAP_Payload"}
-    engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+    engineered_suffixes = (
+        "_freq",
+        "_length",
+        "_digit_ratio",
+        "_upper_ratio",
+        "_special_ratio",
+    )
     engineered_prefixes = ("nlp_pc",)
     velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
     cols_to_drop = [
-        c for c in df.columns
+        c
+        for c in df.columns
         if c in internal_cols_set
         or c.endswith(engineered_suffixes)
         or any(c.startswith(p) for p in engineered_prefixes)
@@ -411,16 +512,21 @@ def get_quarantine(request: Request, session_id: str, limit: int = Query(1000)):
 
     df = pl.read_parquet(quarantine_path)
     total_count = len(df)
-    
+
     if total_count > limit:
         df = df.head(limit)
-        
+
     return {"data": df.to_dicts(), "count": total_count}
 
 
 @app.post("/api/query/{session_id}", dependencies=[Depends(require_api_key)])
 @limiter.limit("20/minute")
-def query_data(request: Request, session_id: str, user_query: str = Query(...), mode: str = Query("explore")):
+def query_data(
+    request: Request,
+    session_id: str,
+    user_query: str = Query(...),
+    mode: str = Query("explore"),
+):
     try:
         validate_session_id(session_id)
     except ValueError:
@@ -491,18 +597,20 @@ async def load_sample(request: Request, filename: str):
     allowed = {"fraud_transactions.csv", "patient_vitals.csv", "ecommerce_reviews.csv"}
     if filename not in allowed:
         return JSONResponse(status_code=400, content={"error": "Unknown sample file."})
-    
+
     data_dir = os.path.join(_BACKEND_DIR, "data")
     file_path = os.path.join(data_dir, filename)
-    
+
     if not os.path.exists(file_path):
         return JSONResponse(status_code=404, content={"error": "Sample not found."})
-    
+
     try:
         df = pl.read_csv(file_path, infer_schema_length=1_000_000)
         validation = SchemaEnforcer.validate(df, dataset_name=filename)
         if not validation["valid"]:
-            return JSONResponse(status_code=400, content={"errors": validation["errors"]})
+            return JSONResponse(
+                status_code=400, content={"errors": validation["errors"]}
+            )
         result = process_and_detect(df=df, file_path=file_path)
         return result
     except Exception as e:

@@ -8,12 +8,16 @@ import os
 import json
 from utils import _BACKEND_DIR, logger
 
+
 class SchemaEnforcer:
     @staticmethod
     def validate(df: pl.DataFrame, dataset_name: str = None) -> dict:
         errors = []
         if len(df) == 0:
-            return {"valid": False, "errors": ["The uploaded dataset is completely empty."]}
+            return {
+                "valid": False,
+                "errors": ["The uploaded dataset is completely empty."],
+            }
 
         null_counts = df.null_count().to_dict(as_series=False)
         for col, count_list in null_counts.items():
@@ -36,7 +40,9 @@ class SchemaEnforcer:
             os.makedirs(schema_dir, exist_ok=True)
             schema_path = os.path.join(schema_dir, f"{dataset_name}.schema.json")
 
-            current_schema = {col: str(dtype) for col, dtype in zip(df.columns, df.dtypes)}
+            current_schema = {
+                col: str(dtype) for col, dtype in zip(df.columns, df.dtypes)
+            }
 
             if os.path.exists(schema_path):
                 try:
@@ -46,18 +52,31 @@ class SchemaEnforcer:
                     drift_errors = []
                     for col, expected_type in expected_schema.items():
                         if col not in current_schema:
-                            drift_errors.append(f"Missing required column: '{col}' (expected {expected_type})")
+                            drift_errors.append(
+                                f"Missing required column: '{col}' (expected {expected_type})"
+                            )
                         else:
-                            expected_base = expected_type.replace('64', '').replace('32', '')
-                            current_base = current_schema[col].replace('64', '').replace('32', '')
+                            expected_base = expected_type.replace("64", "").replace(
+                                "32", ""
+                            )
+                            current_base = (
+                                current_schema[col].replace("64", "").replace("32", "")
+                            )
                             if expected_base != current_base:
-                                drift_errors.append(f"Type drift in '{col}': expected {expected_type}, got {current_schema[col]}")
+                                drift_errors.append(
+                                    f"Type drift in '{col}': expected {expected_type}, got {current_schema[col]}"
+                                )
 
                     if drift_errors:
-                        return {"valid": False, "errors": ["Schema Contract Violation:"] + drift_errors}
+                        return {
+                            "valid": False,
+                            "errors": ["Schema Contract Violation:"] + drift_errors,
+                        }
                 except Exception as e:
-                    logger.warning("Schema drift check failed (schema file may be corrupt): %s", e)
-            
+                    logger.warning(
+                        "Schema drift check failed (schema file may be corrupt): %s", e
+                    )
+
             # Save or update schema if no drift errors (or if it's new)
             with open(schema_path, "w") as f:
                 json.dump(current_schema, f, indent=4)

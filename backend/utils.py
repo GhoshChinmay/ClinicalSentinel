@@ -56,5 +56,7 @@ def cleanup_stale_sessions(max_age_hours: float = 24) -> int:
             if age_hours > max_age_hours:
                 shutil.rmtree(session_path, ignore_errors=True)
                 removed += 1
-                logger.info("Cleaned up stale session: %s (age: %.1fh)", session_name, age_hours)
+                logger.info(
+                    "Cleaned up stale session: %s (age: %.1fh)", session_name, age_hours
+                )
     return removed

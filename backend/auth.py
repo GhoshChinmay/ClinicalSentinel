@@ -39,6 +39,7 @@ async def require_api_key(
 
     # Constant-time comparison to avoid timing attacks
     import hmac
+
     if not hmac.compare_digest(x_api_key, _API_KEY):  # type: ignore[arg-type]
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

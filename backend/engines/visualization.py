@@ -54,7 +54,9 @@ def get_global_histogram(df, numeric_cols):
         flat_values = flat_series.to_numpy()
         hist, bins = np.histogram(flat_values, bins=30, range=(-5, 5))
 
-        return [{"bin": f"{bins[i]:.1f}σ", "count": int(hist[i])} for i in range(len(hist))]
+        return [
+            {"bin": f"{bins[i]:.1f}σ", "count": int(hist[i])} for i in range(len(hist))
+        ]
     except Exception as e:
         logger.warning("Histogram Generation Failed: %s", e)
         return []
@@ -73,7 +75,13 @@ def get_viz_data(session_id: str):
 
     # BUG-11 FIX: Added SHAP_Payload which was leaking into histograms/correlation
     internal_cols = ["is_anomaly", "Threat_Score", "Class", "AI_Reason", "SHAP_Payload"]
-    engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+    engineered_suffixes = (
+        "_freq",
+        "_length",
+        "_digit_ratio",
+        "_upper_ratio",
+        "_special_ratio",
+    )
     engineered_prefixes = ("nlp_pc",)
     velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
 
@@ -83,7 +91,9 @@ def get_viz_data(session_id: str):
     for c, d in zip(df_raw.columns, df_raw.dtypes):
         if c in internal_cols or c in velocity_names:
             continue
-        if c.endswith(engineered_suffixes) or any(c.startswith(p) for p in engineered_prefixes):
+        if c.endswith(engineered_suffixes) or any(
+            c.startswith(p) for p in engineered_prefixes
+        ):
             continue
         if df_clean is not None and c not in df_clean.columns:
             continue
@@ -99,7 +109,10 @@ def get_viz_data(session_id: str):
         try:
             df_for_corr = df_clean if df_clean is not None else df_raw
             corr_df = df_for_corr.select(numeric_cols).to_pandas().corr().fillna(0)
-            correlation_data = {"features": numeric_cols, "matrix": corr_df.values.tolist()}
+            correlation_data = {
+                "features": numeric_cols,
+                "matrix": corr_df.values.tolist(),
+            }
         except Exception as e:
             logger.warning("Correlation matrix failed: %s", e)
 
@@ -108,14 +121,20 @@ def get_viz_data(session_id: str):
     df_target = df_clean if df_clean is not None else df_raw
     for col in categorical_cols:
         try:
-            vc = df_target.get_column(col).value_counts().sort("count", descending=True).head(10)
+            vc = (
+                df_target.get_column(col)
+                .value_counts()
+                .sort("count", descending=True)
+                .head(10)
+            )
 
             val_col = vc.columns[0]
             count_col = next((c for c in vc.columns if c == "count"), vc.columns[1])
 
             items = [
                 {
-                    "label": str(row[val_col])[:35] + ("..." if len(str(row[val_col])) > 35 else ""),
+                    "label": str(row[val_col])[:35]
+                    + ("..." if len(str(row[val_col])) > 35 else ""),
                     "count": row[count_col],
                 }
                 for row in vc.to_dicts()
@@ -130,8 +149,14 @@ def get_viz_data(session_id: str):
     return {
         "columns": numeric_cols,
         "categorical_columns": categorical_cols,
-        "global_raw_hist": get_global_histogram(df_raw, numeric_cols) if numeric_cols else [],
-        "global_clean_hist": get_global_histogram(df_clean, numeric_cols) if df_clean is not None and numeric_cols else [],
+        "global_raw_hist": (
+            get_global_histogram(df_raw, numeric_cols) if numeric_cols else []
+        ),
+        "global_clean_hist": (
+            get_global_histogram(df_clean, numeric_cols)
+            if df_clean is not None and numeric_cols
+            else []
+        ),
         "clean_sample": df_clean.head(1000).to_dicts() if df_clean is not None else [],
         "correlation": correlation_data,
         "categorical_data": cat_data,
