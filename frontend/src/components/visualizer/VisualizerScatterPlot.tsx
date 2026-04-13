@@ -64,9 +64,9 @@ const getCorrelationBadge = (r: number): { text: string; color: string } => {
  * LineOfBestFit renders the regression line using SVG elements.
  *
  * @param {object} props - ScatterData parameters.
- * @returns {JSX.Element} SVG Line.
+ * @returns {React.JSX.Element} SVG Line.
  */
-function LineOfBestFit({ scatterData }: { scatterData: ScatterData }): JSX.Element {
+function LineOfBestFit({ scatterData }: { scatterData: ScatterData }): React.JSX.Element {
   const { xMin, xMax, slope, intercept, rValue, yMin, yMax } = scatterData;
   const x1 = 40;
   const y1 = 360 - (((slope * xMin + intercept) - yMin) / (yMax - yMin || 1)) * 320;
@@ -95,7 +95,7 @@ function LineOfBestFit({ scatterData }: { scatterData: ScatterData }): JSX.Eleme
  * VisualizerScatterPlot renders the pairwise distribution matrix.
  *
  * @param {VisualizerScatterPlotProps} props - Variables configuration.
- * @returns {JSX.Element} The rendered plot.
+ * @returns {React.JSX.Element} The rendered plot.
  */
 export default function VisualizerScatterPlot({
   data,
@@ -103,7 +103,7 @@ export default function VisualizerScatterPlot({
   varY,
   setVarX,
   setVarY,
-}: VisualizerScatterPlotProps): JSX.Element {
+}: VisualizerScatterPlotProps): React.JSX.Element {
   const scatterData = useMemo<ScatterData | null>(() => {
     if (!data || !data.clean_sample || !varX || !varY || data.columns.length < 2) return null;
 

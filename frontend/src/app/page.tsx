@@ -16,6 +16,7 @@ import Query from "@/components/query";
 import Compare from "@/components/compare";
 import ExportReport from "@/components/export-report";
 import PIIModal from "@/components/pii-modal";
+import type { PIIFinding } from "@/components/pii-modal/PIIModal";
 
 // Define the stages of our pipeline
 type PipelineStep = 'upload' | 'detect' | 'insights' | 'clean' | 'compare' | 'edit' | 'visualize' | 'query' | 'report';
@@ -34,7 +35,7 @@ export default function Home() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // --- PII State ---
-  const [piiFindings, setPiiFindings] = useState<any[]>([]);
+  const [piiFindings, setPiiFindings] = useState<PIIFinding[]>([]);
   const [showPIIModal, setShowPIIModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -119,7 +120,7 @@ export default function Home() {
         } else {
           setCurrentStep('detect');
         }
-      } catch (piiErr) {
+      } catch {
         setCurrentStep('detect');
       }
     } catch (err: unknown) {
@@ -429,7 +430,7 @@ export default function Home() {
               setShowPIIModal(false);
               setCurrentStep('detect');
             }}
-            onPseudonymised={(cols) => {
+            onPseudonymised={() => {
               setShowPIIModal(false);
               setCurrentStep('detect');
             }}

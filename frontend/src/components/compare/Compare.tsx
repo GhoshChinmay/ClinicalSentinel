@@ -17,7 +17,7 @@ const IGNORE_KEYS = [
 
 /* ─── Helpers ────────────────────────────────────────────────────────────────────────────── */
 
-const isKeyChanged = (key: string, origRow: any, cleanRow: any): boolean => {
+const isKeyChanged = (key: string, origRow: Record<string, unknown>, cleanRow: Record<string, unknown>): boolean => {
   if (IGNORE_KEYS.includes(key)) return false;
   if (
     key.endsWith('_freq') ||
@@ -33,7 +33,7 @@ const isKeyChanged = (key: string, origRow: any, cleanRow: any): boolean => {
   return origRow[key] !== cleanRow[key];
 };
 
-const formatValue = (val: any): string => {
+const formatValue = (val: unknown): string => {
   if (val === null) return 'NULL';
   if (typeof val === 'number') return Number(val).toFixed(2);
   return String(val);
@@ -46,9 +46,9 @@ const formatValue = (val: any): string => {
  * during the sanitization step.
  *
  * @param {CompareProps} props - Properties including the session identifier.
- * @returns {JSX.Element | null} The comparison component.
+ * @returns {React.JSX.Element | null} The comparison component.
  */
-export default function Compare({ sessionId }: CompareProps): JSX.Element | null {
+export default function Compare({ sessionId }: CompareProps): React.JSX.Element | null {
   const { data, isLoading, errorMsg } = useCompare(sessionId);
 
   if (isLoading) {

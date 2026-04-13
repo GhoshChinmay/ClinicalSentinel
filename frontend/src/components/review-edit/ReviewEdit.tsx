@@ -30,9 +30,9 @@ export interface ColumnDef {
  * allowing manual edits and exporting.
  *
  * @param {ReviewEditProps} props - The properties for the component.
- * @returns {JSX.Element} The rendered spreadsheet interface.
+ * @returns {React.JSX.Element} The rendered spreadsheet interface.
  */
-export default function ReviewEdit({ sessionId }: ReviewEditProps): JSX.Element {
+export default function ReviewEdit({ sessionId }: ReviewEditProps): React.JSX.Element {
   const [rowData, setRowData] = useState<Record<string, unknown>[]>([]);
   const [totalRows, setTotalRows] = useState<number>(0);
   const [columnDefs, setColumnDefs] = useState<ColumnDef[]>([]);

@@ -13,7 +13,8 @@ export const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 
 /* ─── Exports ────────────────────────────────────────────────────────────────────────────── */
 
-export default {
+const config = {
   API_BASE,
   API_KEY,
 };
+export default config;

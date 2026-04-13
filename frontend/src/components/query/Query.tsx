@@ -153,9 +153,9 @@ const renderMessageContent = (msg: QueryMessage, executeEdit: (id: string, sql: 
  * Query component for natural language dataset exploration and modification.
  *
  * @param {QueryProps} props - The properties for the query component.
- * @returns {JSX.Element} The rendered interface.
+ * @returns {React.JSX.Element} The rendered interface.
  */
-export default function Query({ sessionId }: QueryProps): JSX.Element {
+export default function Query({ sessionId }: QueryProps): React.JSX.Element {
   const {
     queryText,
     setQueryText,

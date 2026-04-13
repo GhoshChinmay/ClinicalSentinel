@@ -25,9 +25,9 @@ export interface VizProps {
  * Visualizer component responsible for rendering distribution, correlation, and categorical statistics.
  *
  * @param {VizProps} props - The session ID properties.
- * @returns {JSX.Element | null} The rendered visualization dashboard.
+ * @returns {React.JSX.Element | null} The rendered visualization dashboard.
  */
-export default function Visualizer({ sessionId }: VizProps): JSX.Element | null {
+export default function Visualizer({ sessionId }: VizProps): React.JSX.Element | null {
   const {
     data,
     isLoading,

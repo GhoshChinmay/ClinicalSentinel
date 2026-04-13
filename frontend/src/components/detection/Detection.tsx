@@ -36,9 +36,9 @@ const parseShapPayload = (payload?: string): Array<{ feature: string; impact: nu
  * Detection component to display identified anomalies and SHAP attributions.
  *
  * @param {DetectionProps} props - Properties including the session identifier.
- * @returns {JSX.Element} The rendered detection UI.
+ * @returns {React.JSX.Element} The rendered detection UI.
  */
-export default function Detection({ sessionId }: DetectionProps): JSX.Element {
+export default function Detection({ sessionId }: DetectionProps): React.JSX.Element {
   const {
     data,
     totalAnomalies,

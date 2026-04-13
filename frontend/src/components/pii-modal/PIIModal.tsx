@@ -36,14 +36,14 @@ const getInitialSelected = (findings: PIIFinding[]): Set<string> => {
  * Detects PII columns and allows users to pseudonymise them before proceeding.
  *
  * @param {PIIModalProps} props - The properties for the modal.
- * @returns {JSX.Element} The rendered modal component.
+ * @returns {React.JSX.Element} The rendered modal component.
  */
 export default function PIIModal({
   sessionId,
   findings,
   onDismiss,
   onPseudonymised,
-}: PIIModalProps): JSX.Element {
+}: PIIModalProps): React.JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(getInitialSelected(findings));
   const [isLoading, setIsLoading] = useState(false);
   const [isDone, setIsDone] = useState(false);
@@ -153,7 +153,7 @@ export default function PIIModal({
                   <p className="text-[11px] text-neutral-500 mt-0.5">
                     {f.pii_type}
                     {f.sample_value && (
-                      <span className="ml-2 text-neutral-600">e.g. "{f.sample_value}"</span>
+                      <span className="ml-2 text-neutral-600">e.g. &quot;{f.sample_value}&quot;</span>
                     )}
                   </p>
                 </div>

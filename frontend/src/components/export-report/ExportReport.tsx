@@ -43,14 +43,13 @@ const getReadinessColor = (readiness: string): string => {
  * and allows downloading the clean dataset.
  *
  * @param {ExportReportProps} props - Properties including the session identifier.
- * @returns {JSX.Element} The rendered report interface.
+ * @returns {React.JSX.Element} The rendered report interface.
  */
-export default function ExportReport({ sessionId }: ExportReportProps): JSX.Element {
+export default function ExportReport({ sessionId }: ExportReportProps): React.JSX.Element {
   const [report, setReport] = useState<QualityReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setIsLoading(true);
     api.get(`/api/report/${sessionId}`)
       .then((res) => setReport(res.data))
       .catch((err) => console.error('Failed to fetch report', err))

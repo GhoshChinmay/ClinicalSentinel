@@ -18,7 +18,6 @@ export function useCompare(sessionId: string) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    setIsLoading(true);
     api.get<CompareResponse>(`/api/compare/${sessionId}`)
       .then((res) => {
         setData(res.data);

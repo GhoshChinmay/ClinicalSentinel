@@ -234,14 +234,14 @@ function QuarantineVaultModal({ sessionId, onClose }: { sessionId: string; onClo
  * Allows user to choose a cleaning method like Quarantine, Masking, etc.
  *
  * @param {CleanProps} props - Properties mapping session data and completions.
- * @returns {JSX.Element} The rendered clean interface.
+ * @returns {React.JSX.Element} The rendered clean interface.
  */
 export default function Clean({
   sessionId,
   onComplete,
   recommendedMethod = 'quarantine',
   cleaningRationale,
-}: CleanProps): JSX.Element {
+}: CleanProps): React.JSX.Element {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showVault, setShowVault] = useState(false);

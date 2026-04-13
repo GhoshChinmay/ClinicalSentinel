@@ -14,7 +14,6 @@ import {
     Columns3,
     Hash,
     Type,
-    Calendar,
     ShieldAlert,
     HeartPulse,
     TrendingUp,
@@ -25,7 +24,7 @@ import {
     ChevronDown,
     ChevronUp,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
     BarChart,
     Bar,
@@ -54,7 +53,7 @@ const PIE_COLORS = ["#8b5cf6", "#06b6d4", "#f59e0b"];
 function useAnimatedValue(target: number, duration = 800) {
     const [value, setValue] = useState(0);
     useEffect(() => {
-        if (target === 0) { setValue(0); return; }
+        if (target === 0) { requestAnimationFrame(() => setValue(0)); return; }
         const start = performance.now();
         const step = (now: number) => {
             const progress = Math.min((now - start) / duration, 1);
@@ -154,11 +153,11 @@ function MissingDataChart({ data }: { data: { column: string; null_pct: number }
             <div className="h-[220px]">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 20 }}>
-                        <XAxis type="number" domain={[0, "auto"]} tickFormatter={(v: any) => `${v}%`} tick={{ fill: "#666", fontSize: 11 }} axisLine={false} />
+                        <XAxis type="number" domain={[0, "auto"]} tickFormatter={(v: unknown) => `${v}%`} tick={{ fill: "#666", fontSize: 11 }} axisLine={false} />
                         <YAxis type="category" dataKey="name" width={120} tick={{ fill: "#999", fontSize: 11 }} axisLine={false} tickLine={false} />
                         <Tooltip
                             contentStyle={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: "12px", fontSize: "13px" }}
-                            formatter={(v: any) => [`${Number(v).toFixed(2)}%`, "Missing"]}
+                            formatter={(v: unknown) => [`${Number(v).toFixed(2)}%`, "Missing"]}
                         />
                         <Bar dataKey="value" radius={[0, 6, 6, 0]} animationDuration={800}>
                             {chartData.map((_, i) => {
@@ -420,7 +419,10 @@ export default function Insights({ sessionId, cachedInsights, onInsightsLoaded }
     }, [sessionId, onInsightsLoaded]);
 
     useEffect(() => {
-        if (!hasCachedData) fetchInsights();
+        if (!hasCachedData) {
+            const timer = setTimeout(() => fetchInsights(), 0);
+            return () => clearTimeout(timer);
+        }
     }, [fetchInsights, hasCachedData]);
 
     // ── Loading State ─────────────────────────────────────────
