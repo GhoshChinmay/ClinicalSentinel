@@ -502,7 +502,7 @@ def process_and_detect(
                     payload = json.loads(shap_col[idx])
                     if payload:
                         parsed_shap[idx] = payload
-                except:
+                except Exception:
                     pass
 
         for idx in anomaly_indices:

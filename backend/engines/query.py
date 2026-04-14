@@ -40,6 +40,10 @@ def _force_try_cast(sql: str) -> str:
     """Replace all CAST(...) with TRY_CAST(...) to prevent DuckDB conversion errors on dirty data."""
     result = re.sub(r"\bCAST\s*\(", "TRY_CAST(", sql, flags=re.IGNORECASE)
     result = result.replace("TRY_TRY_CAST", "TRY_CAST")
+    
+    # NEW: Catch Postgres-style casts (e.g. rating::DOUBLE -> TRY_CAST(rating AS DOUBLE))
+    result = re.sub(r"([a-zA-Z0-9_]+)::([a-zA-Z0-9_]+)", r"TRY_CAST(\1 AS \2)", result)
+    
     # Fix pythonic/Polars types that duckdb rejects
     result = re.sub(r"\bFLOAT64\b", "DOUBLE", result, flags=re.IGNORECASE)
     result = re.sub(r"\bINT64\b", "BIGINT", result, flags=re.IGNORECASE)
@@ -88,71 +92,83 @@ Table name MUST be exactly: 'my_table'
 User request: "{user_query}"
 
 CRITICAL RULES:
-1. NEVER use CAST(). ALWAYS use TRY_CAST() instead. This prevents crashes on mixed-type columns.
-2. For string columns that contain numeric-like data (prices, ratings), use TRY_CAST(column AS DOUBLE) to safely convert.
-3. When filtering on numeric conditions for string columns, use: TRY_CAST(column AS DOUBLE) IS NOT NULL AND TRY_CAST(column AS DOUBLE) < value
-4. Handle NULL values gracefully — never assume a column is clean.
-5. Use LIMIT 100 for SELECT queries unless the user explicitly asks for all results.
-6. Use standard SQL types for casting (e.g. DOUBLE, BIGINT, VARCHAR, BOOLEAN). Do not use Polars types like Float64 or Int64.
+1. NEVER rely on implicit casting. If you do math or comparison (>, <, =, <=, >=) on a String/VARCHAR column, you MUST explicitly strip non-numeric characters first using REGEXP_REPLACE, then wrap in TRY_CAST. Example: TRY_CAST(REGEXP_REPLACE(column, '[^0-9.-]', '', 'g') AS DOUBLE).
+2. NEVER use CAST(). ALWAYS use TRY_CAST() instead. This prevents crashes on mixed-type columns.
+3. Handle NULL values gracefully — never assume a column is clean. When filtering on TRY_CAST, ensure the result IS NOT NULL before comparing.
+4. Use LIMIT 100 for SELECT queries unless the user explicitly asks for all results.
+5. Use standard SQL types for casting (e.g. DOUBLE, BIGINT, VARCHAR, BOOLEAN). Do not use Polars types like Float64 or Int64.
 """
 
         if is_edit:
-            system_prompt += "\nReturn ONLY a valid SQL UPDATE or DELETE statement. You are a machine. Do NOT output conversational text like 'Here is the query'. Start your response strictly with the word UPDATE or DELETE. Do NOT include a trailing semicolon."
+            system_prompt += "\nReturn ONLY a valid SQL UPDATE or DELETE statement. Start strictly with UPDATE or DELETE. No conversational text."
         else:
-            system_prompt += "\nReturn ONLY a valid SQL SELECT statement. You are a machine. Do NOT output conversational text. Start your response strictly with the word SELECT. Do NOT include a trailing semicolon."
+            system_prompt += "\nReturn ONLY a valid SQL SELECT statement. Start strictly with SELECT. No conversational text."
 
-        # ── Groq Cloud inference (schema only — no row data sent) ─────────
-        raw_response = groq_chat(
-            messages=[{"role": "system", "content": system_prompt}],
-            model=MODEL_REASONING,
-            temperature=0.1,
-            max_tokens=1024,
-            timeout=15,
-        )
+        # ── NEW: Self-Healing Execution Loop ──
+        messages = [{"role": "system", "content": system_prompt}]
+        last_error = None
+        sql_query = ""
 
-        if raw_response is None:
-            return {
-                "error": "AI query generation failed. Groq API may be unavailable or GROQ_API_KEY is not set."
-            }
+        # Give the AI 2 attempts to get it right without crashing
+        for attempt in range(2):
+            raw_response = groq_chat(
+                messages=messages,
+                model=MODEL_REASONING,
+                temperature=0.1,
+                max_tokens=1024,
+                timeout=15,
+            )
 
-        sql_query = _sanitize_llm_sql(raw_response)
-        sql_query = _force_try_cast(sql_query)
+            if raw_response is None:
+                return {"error": "AI query generation failed. Groq API may be unavailable."}
 
-        logger.info("SQL: %s", sql_query)
+            sql_query = _sanitize_llm_sql(raw_response)
+            sql_query = _force_try_cast(sql_query)
 
-        if is_edit:
-            upper = sql_query.strip().upper()
-            if not upper.startswith("UPDATE") and not upper.startswith("DELETE"):
-                return {
-                    "error": f"Expected UPDATE or DELETE statement, got: {sql_query[:50]}..."
-                }
-            return {"sql": sql_query}
-        else:
-            upper = sql_query.strip().upper()
-            if not upper.startswith("SELECT"):
-                return {"error": f"Expected SELECT statement, got: {sql_query[:50]}..."}
-            con = None
-            try:
-                con = duckdb.connect()
-                con.execute(f"CREATE VIEW my_table AS SELECT * FROM '{data_path}'")
-                result_df = con.query(sql_query).pl()
-                return {
-                    "sql": sql_query,
-                    "columns": result_df.columns,
-                    "data": result_df.head(100).to_dicts(),
-                }
-            except Exception as e:
-                error_str = str(e)
-                if "Conversion Error" in error_str:
+            logger.info("SQL Attempt %d: %s", attempt + 1, sql_query)
+
+            if is_edit:
+                upper = sql_query.strip().upper()
+                if not upper.startswith("UPDATE") and not upper.startswith("DELETE"):
+                    return {"error": f"Expected UPDATE or DELETE statement, got: {sql_query[:50]}..."}
+                return {"sql": sql_query}
+            else:
+                upper = sql_query.strip().upper()
+                if not upper.startswith("SELECT"):
+                    return {"error": f"Expected SELECT statement, got: {sql_query[:50]}..."}
+                
+                con = None
+                try:
+                    con = duckdb.connect()
+                    con.execute(f"CREATE VIEW my_table AS SELECT * FROM '{data_path}'")
+                    result_df = con.query(sql_query).pl()
                     return {
-                        "error": f"Type conversion error — a column contains mixed data types. SQL: {sql_query} | Hint: Use TRY_CAST instead of CAST. | DuckDB: {error_str}"
+                        "sql": sql_query,
+                        "columns": result_df.columns,
+                        "data": result_df.head(100).to_dicts(),
                     }
-                return {
-                    "error": f"Failed to execute. SQL: {sql_query} | Error: {error_str}"
-                }
-            finally:
-                if con:
-                    con.close()
+                except Exception as e:
+                    last_error = str(e)
+                    # If it's a DuckDB error caused by bad SQL or types, trigger Auto-Correction
+                    if "Conversion Error" in last_error or "Binder Error" in last_error or "Catalog Error" in last_error:
+                        logger.warning("SQL crashed. Triggering Auto-Correction. Error: %s", last_error)
+                        # Feed the crash log back to the LLM
+                        messages.append({"role": "assistant", "content": raw_response})
+                        messages.append({
+                            "role": "user", 
+                            "content": f"Your query crashed with this DuckDB error:\n{last_error}\n\nRewrite the query. CRITICAL: You MUST use TRY_CAST(column AS DOUBLE) when doing math/comparisons on dirty columns to avoid this exact crash."
+                        })
+                        continue  # Let the loop run attempt #2
+                    else:
+                        # Unrelated system crash
+                        return {"error": f"Failed to execute. SQL: {sql_query} | Error: {last_error}"}
+                finally:
+                    if con:
+                        con.close()
+
+        # If it breaks out of the loop, it failed twice
+        return {"error": f"AI Auto-correction failed after 2 attempts. Last Error: {last_error} | Last SQL: {sql_query}"}
+
     except Exception as e:
         return {"error": f"Failed to generate SQL: {str(e)}"}
 

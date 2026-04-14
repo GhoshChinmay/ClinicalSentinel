@@ -151,7 +151,18 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
         filename_lower = safe_filename.lower()
         df = None
 
-        if filename_lower.endswith((".xlsx", ".xls")):
+        # 1. Handle WASM Edge Parquet Payload
+        if filename_lower.endswith(".parquet"):
+            try:
+                df = pl.read_parquet(temp_file_path)
+                logger.info("Parsed Secure Parquet payload: %s", file.filename)
+            except Exception as e:
+                return JSONResponse(
+                    status_code=400, content={"error": f"Parquet parse failed: {str(e)}"}
+                )
+
+        # 2. Handle Excel Fallback
+        elif filename_lower.endswith((".xlsx", ".xls")):
             try:
                 import pandas as pd
 

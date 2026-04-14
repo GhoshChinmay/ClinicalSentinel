@@ -5,7 +5,9 @@ import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { Brain, ShieldAlert, Zap } from "lucide-react";
-import DataSphere from "./DataSphere";
+
+// BUG FIX: We import the new PurificationCore here instead of DataSphere
+import PurificationCore from "./PurificationCore";
 
 export default function HeroLanding() {
     const landingContainerRef = useRef<HTMLDivElement>(null);
@@ -33,23 +35,24 @@ export default function HeroLanding() {
             .fromTo(".problem-3", { opacity: 0, y: 100 }, { opacity: 1, y: 0, duration: 0.5 }, "-=0.2");
 
         return () => {
-            // Hard kill all ScrollTriggers created by this component on unmount
             ScrollTrigger.getAll().forEach(t => t.kill());
         };
     }, { scope: landingContainerRef });
 
-    // Cleanup on unmount to ensure GSAP pin spacers are removed
     useEffect(() => {
-        const container = landingContainerRef.current;
+        const node = landingContainerRef.current;
         return () => {
             ScrollTrigger.getAll().forEach(t => t.kill());
-            gsap.killTweensOf(container);
+            gsap.killTweensOf(node);
         };
     }, []);
 
     return (
         <div ref={landingContainerRef} className="relative w-full h-screen flex flex-col items-center justify-center bg-black">
-            <DataSphere />
+
+            {/* --- THE NEW 3D STORYTELLING COMPONENT GOES HERE --- */}
+            <PurificationCore />
+
             <div className="hero-title absolute flex flex-col items-center justify-center z-10 text-center w-full px-4">
                 <h1 className="text-6xl md:text-8xl lg:text-[9rem] font-black tracking-tighter leading-none mb-6">
                     YOUR DATA IS A <br />

@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
     "@gsap/react": "^2.1.2",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
@@ -16,6 +17,7 @@
     "@studio-freight/react-lenis": "^0.0.47",
     "ag-grid-community": "^35.2.0",
     "ag-grid-react": "^35.2.0",
+    "apache-arrow": "^21.1.0",
     "axios": "^1.14.0",
     "framer-motion": "^12.38.0",
     "gsap": "^3.15.0",

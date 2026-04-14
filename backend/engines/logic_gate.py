@@ -49,19 +49,18 @@ CRITICAL RULES:
             return []
 
         rules = data.get("rules", [])
-        logger.info(f"AI generated {len(rules)} dynamic logic rules.")
+        logger.info("AI generated %d dynamic logic rules.", len(rules))
 
-        # --- ADD THESE TWO LINES ---
         for r in rules:
             logger.info(
-                f"Dynamic Rule: {r['column']} {r['operator']} {r['value']} ({r['reason']})"
+                "Dynamic Rule: %s %s %s (%s)",
+                r['column'], r['operator'], r['value'], r['reason'],
             )
-        # ---------------------------
 
         return rules
 
     except Exception as e:
-        logger.warning(f"Dynamic Logic Gate generation failed: {e}")
+        logger.warning("Dynamic Logic Gate generation failed: %s", e)
         return []
 
 
@@ -89,9 +88,9 @@ def apply_logic_gate(df: pl.DataFrame):
             # Safely build Polars execution conditions
             condition = None
             if op == "less_than" and val is not None:
-                condition = pl.col(col) < val
+                condition = pl.col(col).cast(pl.Float64, strict=False) < float(val)
             elif op == "greater_than" and val is not None:
-                condition = pl.col(col) > val
+                condition = pl.col(col).cast(pl.Float64, strict=False) > float(val)
             elif op == "is_null":
                 condition = pl.col(col).is_null()
 
@@ -108,6 +107,6 @@ def apply_logic_gate(df: pl.DataFrame):
                 applied_rules.append(rule)
 
         except Exception as e:
-            logger.warning(f"Failed to apply dynamic rule '{rule}': {e}")
+            logger.warning("Failed to apply dynamic rule '%s': %s", rule, e)
 
     return df, applied_rules
