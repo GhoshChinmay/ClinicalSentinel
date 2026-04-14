@@ -37,7 +37,7 @@
 | **💬 Natural Language Query** | Ask questions in plain English — DataSentinel generates & executes SQL |
 | **📊 Visual Analytics** | Correlation heatmaps, distribution histograms, categorical breakdowns |
 | **📋 Quality Reports** | Exportable data quality scorecards with health metrics |
-| **🎬 Cinematic UI** | GSAP scroll animations, Three.js particle sphere, smooth Lenis scrolling |
+| **🎬 Cinematic UI** | GSAP scroll-driven animations, Three.js PurificationCore & NeuralCore, smooth Lenis scrolling |
 
 ---
 
@@ -162,14 +162,16 @@ The application will be available at **http://localhost:3000**.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+![System Architecture](frontend/public/architecture.png)
+
 ### Data Flow
 
-1. **Upload** → File parsed (CSV/JSON/Excel) → Schema validation → Parquet storage
-2. **Detection** → Feature engineering → Isolation Forest → SHAP explainability → Threat scoring
-3. **PII Scan** → Regex + heuristic scan → Optional SHA-256 pseudonymisation
+1. **Upload** → File parsed (CSV/JSON/Excel/Parquet) → Schema validation → Parquet storage
+2. **PII Scan** → Regex + heuristic scan → Optional SHA-256 pseudonymisation
+3. **Detection** → NLP feature engineering → Neuro-Symbolic Logic Gate → Isolation Forest → SHAP explainability → Threat scoring
 4. **Insights** → Statistical profiling → Groq LLM narrative generation
-5. **Cleaning** → Drop or quarantine anomalies → Save cleaned dataset
-6. **Query** → Natural language → Groq generates SQL → DuckDB executes
+5. **Cleaning** → Drop, quarantine, winsorize, mask, or impute anomalies → Save cleaned dataset
+6. **Query** → Natural language → Groq generates SQL → DuckDB executes → Self-healing retry loop
 7. **Export** → Quality report generation → CSV download
 
 ---
@@ -184,7 +186,7 @@ DSV2/
 │   ├── schema.py               # Data contract validation (SchemaEnforcer)
 │   ├── utils.py                # Session management, logging utilities
 │   ├── groq_client.py          # Centralized Groq LLM client with retries
-│   ├── core_engine.py          # Shared engine utilities
+│   ├── core_engine.py          # Backward compatibility shim (deprecated)
 │   ├── engines/
 │   │   ├── __init__.py         # Re-exports all engine functions
 │   │   ├── detection.py        # Isolation Forest + SHAP anomaly detection
@@ -219,9 +221,10 @@ DSV2/
 │   │   │   └── globals.css     # Global styles & Tailwind config
 │   │   ├── components/
 │   │   │   ├── landing/
-│   │   │   │   ├── HeroLanding.tsx    # GSAP scroll-driven cinematic intro
-│   │   │   │   ├── DataSphere.tsx     # Three.js particle sphere
-│   │   │   │   └── Scene.tsx          # R3F post-processing scene
+│   │   │   │   ├── HeroLanding.tsx        # GSAP scroll-driven cinematic intro
+│   │   │   │   ├── PurificationCore.tsx   # Three.js data purification animation
+│   │   │   │   ├── NeuralCore.tsx         # Three.js neural network background
+│   │   │   │   └── AmbientAurora.tsx      # CSS ambient aurora backdrop
 │   │   │   ├── detection/      # Anomaly detection results table
 │   │   │   ├── insights/       # AI-generated insights dashboard
 │   │   │   ├── clean/          # Cleaning action panel
