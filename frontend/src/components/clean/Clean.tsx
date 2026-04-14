@@ -221,7 +221,8 @@ function QuarantineVaultModal({ sessionId, onClose }: { sessionId: string; onClo
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto p-0">
+        {/* BUG FIX: Added data-lenis-prevent to this container so the user can scroll the table */}
+        <div className="flex-1 overflow-auto p-0" data-lenis-prevent>
           {renderContent()}
         </div>
       </motion.div>

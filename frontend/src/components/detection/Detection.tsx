@@ -148,176 +148,173 @@ export default function Detection({ sessionId }: DetectionProps): React.JSX.Elem
 
       <div className="bg-[#0A0A0A] border border-neutral-800 rounded-2xl overflow-hidden">
         {displayData.length > 0 ? (
-          <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
+          <div className="overflow-x-auto max-h-[600px] custom-scrollbar" data-lenis-prevent>
+            {/* BUG FIX: Added data-lenis-prevent to the main anomalies table container */}
             <table className="w-full text-sm text-left table-fixed">
               <thead className="bg-neutral-900 text-neutral-500 sticky top-0 uppercase text-xs font-semibold z-10 shadow-sm">
                 <tr>
-                  <th className="px-6 py-4 w-[45%]">Row Data Snapshot</th>
-                  <th className="px-6 py-4 w-[55%]">AI Explanations & SHAP Attribution</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800">
-                {displayData.map((row, idx) => {
-                  const originalIdx = data.indexOf(row);
-                  const rowData: Record<string, unknown> = { ...row };
-                  delete rowData.is_anomaly;
-                  delete rowData.AI_Reason;
-                  delete rowData.Threat_Score;
-                  delete rowData.SHAP_Payload;
+              <th className="px-6 py-4 w-[45%]">Row Data Snapshot</th>
+              <th className="px-6 py-4 w-[55%]">AI Explanations & SHAP Attribution</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-800">
+            {displayData.map((row, idx) => {
+              const originalIdx = data.indexOf(row);
+              const rowData: Record<string, unknown> = { ...row };
+              delete rowData.is_anomaly;
+              delete rowData.AI_Reason;
+              delete rowData.Threat_Score;
+              delete rowData.SHAP_Payload;
 
-                  const shapData = parseShapPayload(row.SHAP_Payload);
+              const shapData = parseShapPayload(row.SHAP_Payload);
 
-                  return (
-                    <motion.tr
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: idx * 0.02 }}
-                      key={idx}
-                      className="hover:bg-neutral-900/40"
-                    >
-                      <td className="px-6 py-5 w-[45%] align-top">
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 pr-2">
-                          {Object.entries(rowData).map(([key, val]) => (
-                            <div
-                              key={key}
-                              className="flex flex-col bg-black/40 p-2.5 rounded-lg border border-neutral-800/60 min-w-0"
-                            >
-                              <span
-                                className="text-[9px] text-neutral-500 uppercase font-bold tracking-wider mb-1 truncate"
-                                title={key}
-                              >
-                                {key}
-                              </span>
-                              <span
-                                className="text-xs font-mono text-neutral-200 truncate"
-                                title={String(val)}
-                              >
-                                {typeof val === 'number' && !Number.isInteger(val)
-                                  ? val.toFixed(4)
-                                  : String(val ?? '—')}
-                              </span>
-                            </div>
-                          ))}
+              return (
+                <motion.tr
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: idx * 0.02 }}
+                  key={idx}
+                  className="hover:bg-neutral-900/40"
+                >
+                  <td className="px-6 py-5 w-[45%] align-top">
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 pr-2">
+                      {Object.entries(rowData).map(([key, val]) => (
+                        <div
+                          key={key}
+                          className="flex flex-col bg-black/40 p-2.5 rounded-lg border border-neutral-800/60 min-w-0"
+                        >
+                          <span
+                            className="text-[9px] text-neutral-500 uppercase font-bold tracking-wider mb-1 truncate"
+                            title={key}
+                          >
+                            {key}
+                          </span>
+                          <span
+                            className="text-xs font-mono text-neutral-200 truncate"
+                            title={String(val)}
+                          >
+                            {typeof val === 'number' && !Number.isInteger(val)
+                              ? val.toFixed(4)
+                              : String(val ?? '—')}
+                          </span>
                         </div>
-                      </td>
+                      ))}
+                    </div>
+                  </td>
 
-                      <td className="px-6 py-5 w-[55%] align-top">
-                        <div className="flex flex-col space-y-3">
-                          <div className="flex items-start text-neutral-300 bg-purple-900/10 p-4 rounded-xl border border-purple-500/20 shadow-inner">
-                            <div className="bg-purple-500/20 p-1.5 rounded-lg mr-3 mt-0.5 shrink-0">
-                              <Activity className="w-4 h-4 text-purple-400" />
-                            </div>
-                            <span className="text-sm leading-relaxed font-medium">
-                              {row.AI_Reason ||
-                                'Flagged as an anomaly by the multi-dimensional detection model.'}
-                            </span>
-                          </div>
+                  <td className="px-6 py-5 w-[55%] align-top">
+                    <div className="flex flex-col space-y-3">
+                      <div className="flex items-start text-neutral-300 bg-purple-900/10 p-4 rounded-xl border border-purple-500/20 shadow-inner">
+                        <div className="bg-purple-500/20 p-1.5 rounded-lg mr-3 mt-0.5 shrink-0">
+                          <Activity className="w-4 h-4 text-purple-400" />
+                        </div>
+                        <span className="text-sm leading-relaxed font-medium">
+                          {row.AI_Reason ||
+                            'Flagged as an anomaly by the multi-dimensional detection model.'}
+                        </span>
+                      </div>
 
-                          {row.Threat_Score !== undefined && row.Threat_Score > 0 && (
-                            <div className="inline-flex items-center w-fit text-xs font-bold px-3 py-1.5 rounded-lg border border-red-900/50 bg-red-500/10 text-red-400">
-                              <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />
-                              Threat Score: {row.Threat_Score}%
-                            </div>
-                          )}
+                      {row.Threat_Score !== undefined && row.Threat_Score > 0 && (
+                        <div className="inline-flex items-center w-fit text-xs font-bold px-3 py-1.5 rounded-lg border border-red-900/50 bg-red-500/10 text-red-400">
+                          <ShieldAlert className="w-3.5 h-3.5 mr-1.5" />
+                          Threat Score: {row.Threat_Score}%
+                        </div>
+                      )}
 
-                          {shapData && shapData.length > 0 && (
-                            <div className="bg-[#050505] border border-neutral-800/80 rounded-xl p-4">
-                              <h5 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-3 flex items-center">
-                                Mathematical Attribution (SHAP)
-                              </h5>
-                              <div className="space-y-2.5">
-                                {shapData.map((shap, sIdx) => {
-                                  const isPositive = shap.impact > 0;
-                                  const width = Math.min(
-                                    Math.max(Math.abs(shap.impact) * 100, 5),
-                                    100
-                                  );
-                                  return (
+                      {shapData && shapData.length > 0 && (
+                        <div className="bg-[#050505] border border-neutral-800/80 rounded-xl p-4">
+                          <h5 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-3 flex items-center">
+                            Mathematical Attribution (SHAP)
+                          </h5>
+                          <div className="space-y-2.5">
+                            {shapData.map((shap, sIdx) => {
+                              const isPositive = shap.impact > 0;
+                              const width = Math.min(
+                                Math.max(Math.abs(shap.impact) * 100, 5),
+                                100
+                              );
+                              return (
+                                <div
+                                  key={sIdx}
+                                  className="flex items-center justify-between group"
+                                >
+                                  <span
+                                    className="text-xs text-neutral-400 font-mono truncate w-1/3 pr-2"
+                                    title={shap.feature}
+                                  >
+                                    {shap.feature}
+                                  </span>
+                                  <div className="w-1/2 bg-neutral-900 rounded-full h-1.5 overflow-hidden flex">
                                     <div
-                                      key={sIdx}
-                                      className="flex items-center justify-between group"
-                                    >
-                                      <span
-                                        className="text-xs text-neutral-400 font-mono truncate w-1/3 pr-2"
-                                        title={shap.feature}
-                                      >
-                                        {shap.feature}
-                                      </span>
-                                      <div className="w-1/2 bg-neutral-900 rounded-full h-1.5 overflow-hidden flex">
-                                        <div
-                                          className={`h-full rounded-full transition-all ${
-                                            isPositive ? 'bg-red-500' : 'bg-emerald-500'
-                                          }`}
-                                          style={{ width: `${width}%` }}
-                                        />
-                                      </div>
-                                      <span
-                                        className={`text-[10px] font-mono w-12 text-right ${
-                                          isPositive ? 'text-red-400' : 'text-emerald-400'
+                                      className={`h-full rounded-full transition-all ${isPositive ? 'bg-red-500' : 'bg-emerald-500'
                                         }`}
-                                      >
-                                        {isPositive ? '+' : ''}
-                                        {shap.impact.toFixed(2)}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="flex items-center space-x-2 pt-1">
-                            <span className="text-[10px] uppercase font-bold text-neutral-600 mr-2">
-                              Was this correct?
-                            </span>
-                            <button
-                              onClick={() => submitFeedback(row, originalIdx, true)}
-                              disabled={feedbackMap[originalIdx] !== undefined}
-                              className={`flex items-center px-3 py-1.5 space-x-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                                feedbackMap[originalIdx] === 'correct'
-                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
-                                  : feedbackMap[originalIdx] === 'incorrect'
-                                  ? 'opacity-30 cursor-not-allowed bg-black text-neutral-600 border-neutral-800'
-                                  : 'bg-[#0A0A0A] text-neutral-400 border-neutral-800 hover:text-emerald-400 hover:border-emerald-500/50'
-                              }`}
-                            >
-                              <ThumbsUp className="w-3.5 h-3.5" />
-                              <span>Yes</span>
-                            </button>
-                            <button
-                              onClick={() => submitFeedback(row, originalIdx, false)}
-                              disabled={feedbackMap[originalIdx] !== undefined}
-                              className={`flex items-center px-3 py-1.5 space-x-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                                feedbackMap[originalIdx] === 'incorrect'
-                                  ? 'bg-neutral-800/80 text-neutral-300 border-neutral-600'
-                                  : feedbackMap[originalIdx] === 'correct'
-                                  ? 'opacity-30 cursor-not-allowed bg-black text-neutral-600 border-neutral-800'
-                                  : 'bg-[#0A0A0A] text-neutral-400 border-neutral-800 hover:text-neutral-300 hover:border-neutral-600'
-                              }`}
-                            >
-                              <ThumbsDown className="w-3.5 h-3.5" />
-                              <span>No</span>
-                            </button>
+                                      style={{ width: `${width}%` }}
+                                    />
+                                  </div>
+                                  <span
+                                    className={`text-[10px] font-mono w-12 text-right ${isPositive ? 'text-red-400' : 'text-emerald-400'
+                                      }`}
+                                  >
+                                    {isPositive ? '+' : ''}
+                                    {shap.impact.toFixed(2)}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
-                      </td>
-                    </motion.tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="p-12 text-center flex flex-col items-center justify-center text-neutral-500">
-            <CheckCircle className="w-12 h-12 mb-4 opacity-30" />
-            <h3 className="text-lg font-medium text-neutral-400">
-              No anomalies match this strictness
-            </h3>
-            <p className="text-sm mt-1">Lower the Threat Score threshold to view more rows.</p>
-          </div>
-        )}
+                      )}
+
+                      <div className="flex items-center space-x-2 pt-1">
+                        <span className="text-[10px] uppercase font-bold text-neutral-600 mr-2">
+                          Was this correct?
+                        </span>
+                        <button
+                          onClick={() => submitFeedback(row, originalIdx, true)}
+                          disabled={feedbackMap[originalIdx] !== undefined}
+                          className={`flex items-center px-3 py-1.5 space-x-1.5 rounded-lg text-xs font-bold border transition-colors ${feedbackMap[originalIdx] === 'correct'
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                            : feedbackMap[originalIdx] === 'incorrect'
+                              ? 'opacity-30 cursor-not-allowed bg-black text-neutral-600 border-neutral-800'
+                              : 'bg-[#0A0A0A] text-neutral-400 border-neutral-800 hover:text-emerald-400 hover:border-emerald-500/50'
+                            }`}
+                        >
+                          <ThumbsUp className="w-3.5 h-3.5" />
+                          <span>Yes</span>
+                        </button>
+                        <button
+                          onClick={() => submitFeedback(row, originalIdx, false)}
+                          disabled={feedbackMap[originalIdx] !== undefined}
+                          className={`flex items-center px-3 py-1.5 space-x-1.5 rounded-lg text-xs font-bold border transition-colors ${feedbackMap[originalIdx] === 'incorrect'
+                            ? 'bg-neutral-800/80 text-neutral-300 border-neutral-600'
+                            : feedbackMap[originalIdx] === 'correct'
+                              ? 'opacity-30 cursor-not-allowed bg-black text-neutral-600 border-neutral-800'
+                              : 'bg-[#0A0A0A] text-neutral-400 border-neutral-800 hover:text-neutral-300 hover:border-neutral-600'
+                            }`}
+                        >
+                          <ThumbsDown className="w-3.5 h-3.5" />
+                          <span>No</span>
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                </motion.tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+      ) : (
+      <div className="p-12 text-center flex flex-col items-center justify-center text-neutral-500">
+        <CheckCircle className="w-12 h-12 mb-4 opacity-30" />
+        <h3 className="text-lg font-medium text-neutral-400">
+          No anomalies match this strictness
+        </h3>
+        <p className="text-sm mt-1">Lower the Threat Score threshold to view more rows.</p>
+      </div>
+        )}
     </div>
+    </div >
   );
 }
 

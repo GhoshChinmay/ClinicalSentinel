@@ -133,7 +133,11 @@ export default function ReviewEdit({ sessionId }: ReviewEditProps): React.JSX.El
         </button>
       </div>
 
-      <div className="ag-theme-alpine-dark w-full h-[500px] border-x border-b border-neutral-800 rounded-b-2xl overflow-hidden">
+      {/* BUG FIX: Added data-lenis-prevent to this AG Grid container */}
+      <div
+        className="ag-theme-alpine-dark w-full h-[500px] border-x border-b border-neutral-800 rounded-b-2xl overflow-hidden"
+        data-lenis-prevent
+      >
         <AgGridReact
           ref={gridRef}
           theme="legacy"

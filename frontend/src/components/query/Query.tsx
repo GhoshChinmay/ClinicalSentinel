@@ -26,33 +26,31 @@ export interface QueryProps {
 /* ─── Shared Renderers ───────────────────────────────────────────────────────────────────── */
 
 const renderDataTable = (columns: string[], dataRows: Record<string, unknown>[], isEdit: boolean) => (
+  // BUG FIX: Added data-lenis-prevent so tables can be scrolled horizontally
   <div
-    className={`mt-3 border rounded-xl overflow-hidden overflow-x-auto ${
-      isEdit ? 'bg-green-500/5 border-green-900/50' : 'bg-[#0A0A0A] border-neutral-800'
-    }`}
+    className={`mt-3 border rounded-xl overflow-hidden overflow-x-auto ${isEdit ? 'bg-green-500/5 border-green-900/50' : 'bg-[#0A0A0A] border-neutral-800'
+      }`}
+    data-lenis-prevent
   >
     <div
-      className={`flex items-center text-xs p-3 border-b font-mono uppercase ${
-        isEdit ? 'text-green-400 border-green-900/50' : 'text-neutral-500 border-neutral-800'
-      }`}
+      className={`flex items-center text-xs p-3 border-b font-mono uppercase ${isEdit ? 'text-green-400 border-green-900/50' : 'text-neutral-500 border-neutral-800'
+        }`}
     >
       <Database className="w-3 h-3 mr-2" />
       {isEdit ? 'Affected Rows Preview' : `Results (${dataRows.length} rows)`}
     </div>
-    <div className="max-h-64 overflow-y-auto custom-scrollbar">
+    <div className="max-h-64 overflow-y-auto custom-scrollbar" data-lenis-prevent>
       <table className="w-full text-sm text-left text-neutral-300">
         <thead
-          className={`text-xs uppercase sticky top-0 ${
-            isEdit ? 'bg-green-900/40 text-green-500' : 'bg-neutral-900 text-neutral-500'
-          }`}
+          className={`text-xs uppercase sticky top-0 ${isEdit ? 'bg-green-900/40 text-green-500' : 'bg-neutral-900 text-neutral-500'
+            }`}
         >
           <tr>
             {columns.map((col: string) => (
               <th
                 key={col}
-                className={`px-4 py-2 border-b whitespace-nowrap ${
-                  isEdit ? 'border-green-900/30' : 'border-neutral-800'
-                }`}
+                className={`px-4 py-2 border-b whitespace-nowrap ${isEdit ? 'border-green-900/30' : 'border-neutral-800'
+                  }`}
               >
                 {col}
               </th>
@@ -70,9 +68,8 @@ const renderDataTable = (columns: string[], dataRows: Record<string, unknown>[],
             dataRows.map((row: Record<string, unknown>, i: number) => (
               <tr
                 key={i}
-                className={`border-b hover:bg-white/5 ${
-                  isEdit ? 'border-green-900/30' : 'border-neutral-800/50'
-                }`}
+                className={`border-b hover:bg-white/5 ${isEdit ? 'border-green-900/30' : 'border-neutral-800/50'
+                  }`}
               >
                 {columns.map((col: string) => (
                   <td key={col} className="px-4 py-2 font-mono whitespace-nowrap">
@@ -98,7 +95,7 @@ const renderMessageContent = (msg: QueryMessage, executeEdit: (id: string, sql: 
       {msg.role === 'user' && <p className="text-sm">{msg.content}</p>}
 
       {msg.type === 'text' && <div className="text-sm text-neutral-300 mt-1">{msg.content}</div>}
-      
+
       {msg.type === 'error' && (
         <div className="flex items-start text-red-400 bg-red-500/10 border border-red-900/50 p-4 rounded-xl text-sm">
           <AlertCircle className="w-5 h-5 mr-2 shrink-0 mt-0.5" /> {msg.content}
@@ -196,21 +193,19 @@ export default function Query({ sessionId }: QueryProps): React.JSX.Element {
           <div className="flex bg-black p-1 rounded-xl border border-neutral-800">
             <button
               onClick={() => setMode('explore')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                mode === 'explore'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${mode === 'explore'
                   ? 'bg-blue-500/20 text-blue-400'
                   : 'text-neutral-500 hover:text-white'
-              }`}
+                }`}
             >
               Explore
             </button>
             <button
               onClick={() => setMode('edit')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center ${
-                mode === 'edit'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center ${mode === 'edit'
                   ? 'bg-red-500/20 text-red-400'
                   : 'text-neutral-500 hover:text-white'
-              }`}
+                }`}
             >
               <ShieldAlert className="w-3 h-3 mr-1" /> Modify
             </button>
@@ -218,7 +213,8 @@ export default function Query({ sessionId }: QueryProps): React.JSX.Element {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[#0A0A0A]">
+      {/* BUG FIX: Added data-lenis-prevent so the chat window can be scrolled */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[#0A0A0A]" data-lenis-prevent>
         <AnimatePresence initial={false}>
           {messages.map((msg) => (
             <motion.div
@@ -234,11 +230,10 @@ export default function Query({ sessionId }: QueryProps): React.JSX.Element {
               )}
 
               <div
-                className={`max-w-[85%] ${
-                  msg.role === 'user'
+                className={`max-w-[85%] ${msg.role === 'user'
                     ? 'bg-blue-600 text-white px-5 py-3 rounded-2xl rounded-tr-sm shadow-md'
                     : 'w-full'
-                }`}
+                  }`}
               >
                 {renderMessageContent(msg, executeEdit)}
               </div>
@@ -286,20 +281,18 @@ export default function Query({ sessionId }: QueryProps): React.JSX.Element {
                 ? 'Ask a question about the data...'
                 : 'Command the AI to modify the dataset...'
             }
-            className={`w-full bg-[#050505] border text-white rounded-xl pl-4 pr-14 py-3.5 outline-none transition-colors text-sm focus:ring-2 focus:ring-opacity-20 ${
-              mode === 'edit'
+            className={`w-full bg-[#050505] border text-white rounded-xl pl-4 pr-14 py-3.5 outline-none transition-colors text-sm focus:ring-2 focus:ring-opacity-20 ${mode === 'edit'
                 ? 'border-red-900/50 focus:border-red-500 focus:ring-red-500'
                 : 'border-neutral-700 focus:border-blue-500 focus:ring-blue-500'
-            }`}
+              }`}
           />
           <button
             type="submit"
             disabled={isLoading || !queryText.trim()}
-            className={`absolute right-2 p-2 rounded-lg disabled:opacity-50 transition-colors ${
-              mode === 'edit'
+            className={`absolute right-2 p-2 rounded-lg disabled:opacity-50 transition-colors ${mode === 'edit'
                 ? 'bg-red-500 text-black hover:bg-red-400'
                 : 'bg-blue-600 text-white hover:bg-blue-500'
-            }`}
+              }`}
           >
             <Send className="w-4 h-4" />
           </button>
