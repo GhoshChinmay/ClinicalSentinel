@@ -63,7 +63,7 @@ export default function PIIModal({
       onDismiss();
       return;
     }
-    
+
     setIsLoading(true);
     try {
       await api.post(`/api/pseudonymise/${sessionId}`, Array.from(selected));
@@ -126,25 +126,24 @@ export default function PIIModal({
             Select columns to pseudonymise (hash) before proceeding.
           </p>
 
-          <div className="space-y-2 mb-6 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
+          {/* FIX APPLIED HERE: Added data-lenis-prevent to the scrollable container */}
+          <div data-lenis-prevent className="space-y-2 mb-6 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
             {findings.map((f) => (
               <div
                 key={f.column}
                 onClick={() => toggleColumnSelection(f.column)}
-                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
-                  selected.has(f.column)
-                    ? 'bg-amber-500/10 border-amber-500/40'
-                    : 'bg-neutral-900 border-neutral-800'
-                }`}
+                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selected.has(f.column)
+                  ? 'bg-amber-500/10 border-amber-500/40'
+                  : 'bg-neutral-900 border-neutral-800'
+                  }`}
               >
                 <div>
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        f.confidence === 'high'
-                          ? 'bg-red-500/20 text-red-400'
-                          : 'bg-amber-500/20 text-amber-400'
-                      }`}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${f.confidence === 'high'
+                        ? 'bg-red-500/20 text-red-400'
+                        : 'bg-amber-500/20 text-amber-400'
+                        }`}
                     >
                       {f.confidence.toUpperCase()}
                     </span>
@@ -158,11 +157,10 @@ export default function PIIModal({
                   </p>
                 </div>
                 <div
-                  className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
-                    selected.has(f.column)
-                      ? 'bg-amber-500 border-amber-500 text-black'
-                      : 'border-neutral-700'
-                  }`}
+                  className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${selected.has(f.column)
+                    ? 'bg-amber-500 border-amber-500 text-black'
+                    : 'border-neutral-700'
+                    }`}
                 >
                   {selected.has(f.column) && <span className="text-[10px] font-black">✓</span>}
                 </div>
