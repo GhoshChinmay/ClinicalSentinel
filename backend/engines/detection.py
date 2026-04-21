@@ -5,6 +5,7 @@ and Neuro-Symbolic Logic Gating.
 """
 
 import uuid
+import os
 import polars as pl
 import pandas as pd
 import numpy as np
@@ -603,6 +604,19 @@ def process_and_detect(
 
     raw_parquet_path = f"{session_dir}/raw_data.parquet"
     df.write_parquet(raw_parquet_path)
+
+    # ── NEW: Cache the schema for the LLM ──
+    try:
+        schema_data = {
+            "columns": df.columns,
+            "dtypes": [str(t) for t in df.dtypes],
+            "row_count": len(df)
+        }
+        meta_path = os.path.join(_session_dir(session_id), "metadata.json")
+        with open(meta_path, "w") as f:
+            json.dump(schema_data, f)
+    except Exception as e:
+        logger.warning(f"Could not save metadata cache: {e}")
 
     # ---------------------------------------------------------
     # STAGE 7: SMART CLEANING RECOMMENDATION ENGINE

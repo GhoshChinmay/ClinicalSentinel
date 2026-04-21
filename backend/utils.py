@@ -8,6 +8,7 @@ import re
 import logging
 import time
 import shutil
+import json
 
 # --- STRUCTURED LOGGING ---
 logging.basicConfig(
@@ -60,3 +61,24 @@ def cleanup_stale_sessions(max_age_hours: float = 24) -> int:
                     "Cleaned up stale session: %s (age: %.1fh)", session_name, age_hours
                 )
     return removed
+
+
+def log_audit_action(session_id: str, user_query: str, sql: str, rows_affected: int = 0, status: str = "success", error_detail: str = ""):
+    """
+    Step 4.2: Logs every AI mutation action to an append-only JSONL file.
+    """
+    audit_file = os.path.join(_BACKEND_DIR, "logs", "audit_trail.jsonl")
+    os.makedirs(os.path.dirname(audit_file), exist_ok=True)
+    
+    entry = {
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "session_id": session_id,
+        "prompt": user_query,
+        "sql": sql,
+        "affected": rows_affected,
+        "status": status,
+        "error": error_detail
+    }
+    
+    with open(audit_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")

@@ -4,6 +4,8 @@ API routes, file upload handling, and session management.
 """
 
 import os
+import re
+import json
 
 # Load .env file before anything else reads environment variables
 from dotenv import load_dotenv
@@ -22,7 +24,8 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 import polars as pl
 from fastapi import FastAPI, UploadFile, File, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+# NEW: Import StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -42,7 +45,8 @@ from engines import (
     clean_dataset,
     get_viz_data,
     generate_insights,
-    execute_natural_query,
+    # NEW: Import the streaming version
+    execute_natural_query_stream,
     confirm_and_execute_edit,
     generate_quality_report,
     scan_for_pii,
@@ -86,6 +90,100 @@ def submit_feedback(request: Request, payload: FeedbackRequest):
         # BUG-08 FIX: .dict() is deprecated in Pydantic v2; use .model_dump()
         f.write(json.dumps(payload.model_dump()) + "\n")
     return {"status": "success"}
+
+
+# ── OPTION 3: THE LEARNING AGENT (DYNAMIC KNOWLEDGE BASE) ────────────────────
+class KnowledgeRule(BaseModel):
+    term: str
+    logic: str
+    description: str
+    keywords: list[str]
+
+@app.post("/api/knowledge/learn", dependencies=[Depends(require_api_key)])
+@limiter.limit("20/minute")
+def teach_agent(request: Request, payload: KnowledgeRule):
+    """
+    Phase 2.2: Knowledge Ingestion Endpoint.
+    Allows users to dynamically teach the agent new business logic.
+    """
+    dict_path = os.path.join(_BACKEND_DIR, "data", "business_dictionary.json")
+    
+    # Initialize or load existing KB
+    if not os.path.exists(dict_path):
+        kb_data = {"version": "2.0.0", "knowledge_base": {"user_defined": []}}
+    else:
+        with open(dict_path, "r") as f:
+            kb_data = json.load(f)
+            
+    if "user_defined" not in kb_data["knowledge_base"]:
+        kb_data["knowledge_base"]["user_defined"] = []
+
+    # Append the new rule
+    new_rule = {
+        "term": payload.term,
+        "keywords": payload.keywords,
+        "logic": payload.logic,
+        "description": payload.description
+    }
+    kb_data["knowledge_base"]["user_defined"].append(new_rule)
+
+    # Save it permanently
+    os.makedirs(os.path.dirname(dict_path), exist_ok=True)
+    with open(dict_path, "w") as f:
+        json.dump(kb_data, f, indent=2)
+
+    return {"status": "success", "message": f"Agent successfully learned the rule for '{payload.term}'."}
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── STEP 4.1: LIVE DATABASE CONNECTOR ────────────────────────────────────────
+class DBConnectionRequest(BaseModel):
+    uri: str  # Format: postgresql://user:pass@host:port/dbname
+
+@app.post("/api/connect-db/{session_id}", dependencies=[Depends(require_api_key)])
+@limiter.limit("10/minute")
+def connect_postgres(request: Request, session_id: str, payload: DBConnectionRequest):
+    """Attach a live PostgreSQL instance to the current session."""
+    try:
+        validate_session_id(session_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
+
+    # Basic security validation
+    if not payload.uri.startswith(("postgres://", "postgresql://")):
+        return JSONResponse(status_code=400, content={"error": "Only PostgreSQL URIs are supported in this version."})
+
+    session_dir = _session_dir(session_id)
+    config_path = os.path.join(session_dir, "db_config.json")
+
+    # Save the connection string securely in the session
+    with open(config_path, "w") as f:
+        json.dump({"db_uri": payload.uri, "type": "postgres"}, f)
+
+    return {"status": "success", "message": "PostgreSQL Database successfully linked. The AI Agent will now query this live database."}
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── STEP 4.2: AUDIT LOG ENDPOINT ─────────────────────────────────────────────
+@app.get("/api/admin/audit-logs", dependencies=[Depends(require_api_key)])
+@limiter.limit("30/minute")
+def get_audit_logs(request: Request, limit: int = Query(100)):
+    """Fetch the immutable audit trail of AI data mutations."""
+    audit_file = os.path.join(_BACKEND_DIR, "logs", "audit_trail.jsonl")
+    
+    if not os.path.exists(audit_file):
+        return {"logs": []}
+        
+    logs = []
+    try:
+        with open(audit_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    logs.append(json.loads(line))
+                    
+        # Return the most recent logs first
+        return {"logs": list(reversed(logs))[:limit]}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to read logs: {str(e)}"})
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 # --- CORS: environment-based whitelist instead of wildcard ---
@@ -529,10 +627,10 @@ def get_quarantine(request: Request, session_id: str, limit: int = Query(1000)):
 
     return {"data": df.to_dicts(), "count": total_count}
 
-
+# NEW: Update to use streaming response
 @app.post("/api/query/{session_id}", dependencies=[Depends(require_api_key)])
 @limiter.limit("20/minute")
-def query_data(
+async def query_data(
     request: Request,
     session_id: str,
     user_query: str = Query(...),
@@ -544,11 +642,12 @@ def query_data(
         return JSONResponse(status_code=400, content={"error": "Invalid session ID"})
 
     is_edit = mode == "edit"
-    result = execute_natural_query(session_id, user_query, is_edit=is_edit)
-    if "error" in result:
-        return JSONResponse(status_code=400, content=result)
-    return result
-
+    
+    # We now return a StreamingResponse that yields Server-Sent Events
+    return StreamingResponse(
+        execute_natural_query_stream(session_id, user_query, is_edit=is_edit),
+        media_type="text/event-stream"
+    )
 
 @app.post("/api/confirm-edit/{session_id}", dependencies=[Depends(require_api_key)])
 @limiter.limit("20/minute")

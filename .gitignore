@@ -60,6 +60,7 @@ backend/data/*
 temp_uploads/
 backend/temp_uploads/
 backend/sessions/
+backend/logs/
 
 # Build artifacts
 frontend/out/
