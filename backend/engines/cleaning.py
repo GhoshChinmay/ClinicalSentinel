@@ -1,5 +1,5 @@
 """
-DataSentinel — Cleaning Engine
+DataSentinel — Cleaning Engine (Godmode Edition)
 Five sanitization strategies: Quarantine, Winsorize, Mask, Impute, Drop.
 """
 
@@ -7,12 +7,14 @@ import os
 import polars as pl
 import numpy as np
 import pandas as pd
-from sklearn.impute import KNNImputer
 
 from utils import _session_dir, logger
 
 
 def clean_dataset(session_id: str, action: str = "drop"):
+    """
+    Applies enterprise-grade data cleaning mutations and saves to cleaned_data.parquet.
+    """
     session_dir = _session_dir(session_id)
     raw_parquet_path = f"{session_dir}/raw_data.parquet"
 
@@ -21,195 +23,182 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
     df = pl.read_parquet(raw_parquet_path)
     original_count = len(df)
+    cleaned_df = df # Default fallback
 
-    if action in ["drop", "quarantine"]:
-        quarantined_df = df.filter(pl.col("is_anomaly") == True)
-        if len(quarantined_df) > 0:
-            quarantined_df.write_parquet(f"{session_dir}/quarantined_data.parquet")
+    try:
+        # ── ACTION: DROP / QUARANTINE ──
+        if action in ["drop", "quarantine"]:
+            if "is_anomaly" in df.columns:
+                quarantined_df = df.filter(pl.col("is_anomaly") == True)
+                if len(quarantined_df) > 0:
+                    quarantined_df.write_parquet(f"{session_dir}/quarantined_data.parquet")
+                cleaned_df = df.filter(pl.col("is_anomaly") == False)
+            else:
+                cleaned_df = df.drop_nulls()
 
-        cleaned_df = df.filter(pl.col("is_anomaly") == False)
+        # ── ACTION: WINSORIZE (Clipping Outliers) ──
+        elif action == "winsorize":
+            numeric_cols = [c for c, dtype in zip(df.columns, df.dtypes) if dtype in pl.NUMERIC_DTYPES]
+            normal_data = df.filter(pl.col("is_anomaly") == False) if "is_anomaly" in df.columns else df
 
-    elif action == "winsorize":
-        numeric_cols = [
-            col
-            for col, dtype in zip(df.columns, df.dtypes)
-            if dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]
-        ]
-        normal_data = df.filter(pl.col("is_anomaly") == False)
-
-        exprs = []
-        for col in numeric_cols:
-            if col in ["is_anomaly", "Threat_Score"]:
-                continue
-
-            lower_bound = normal_data[col].quantile(0.05)
-            upper_bound = normal_data[col].quantile(0.95)
-
-            if lower_bound is None or upper_bound is None:
-                logger.info("[WINSORIZE] Skipping '%s' — all-null column.", col)
-                continue
-
-            expr = (
-                pl.when(pl.col("is_anomaly") == True)
-                .then(pl.col(col).clip(lower_bound, upper_bound))
-                .otherwise(pl.col(col))
-                .alias(col)
-            )
-            exprs.append(expr)
-
-        cleaned_df = df.with_columns(exprs)
-
-    elif action == "mask":
-        string_cols = [
-            col
-            for col, dtype in zip(df.columns, df.dtypes)
-            if "String" in str(dtype) or "Utf8" in str(dtype)
-        ]
-
-        safe_text_cols = []
-        for col in string_cols:
-            if col in ["AI_Reason", "is_anomaly", "Threat_Score", "SHAP_Payload"]:
-                continue
-            try:
-                sample = df[col].drop_nulls()
-                if len(sample) == 0:
-                    continue
-                stripped = sample.str.replace_all(r"[₹$€£¥,\s]", "").str.strip_chars()
-                numeric_count = stripped.str.contains(r"^-?\d+\.?\d*$").sum()
-                numeric_ratio = numeric_count / len(sample)
-                if numeric_ratio > 0.5:
-                    logger.info(
-                        "[MASK SAFEGUARD] Skipping column '%s' — %.0f%% numeric content detected.",
-                        col,
-                        numeric_ratio * 100,
-                    )
-                    continue
-                safe_text_cols.append(col)
-            except Exception:
-                safe_text_cols.append(col)
-
-        if not safe_text_cols:
-            logger.info(
-                "[MASK SAFEGUARD] No safe text columns found. Falling back to quarantine."
-            )
-            quarantined_df = df.filter(pl.col("is_anomaly") == True)
-            if len(quarantined_df) > 0:
-                quarantined_df.write_parquet(f"{session_dir}/quarantined_data.parquet")
-            cleaned_df = df.filter(pl.col("is_anomaly") == False)
-        else:
             exprs = []
-            for col in safe_text_cols:
-                expr = (
-                    pl.when(pl.col("is_anomaly") == True)
-                    .then(pl.lit("[REDACTED_ANOMALY]"))
-                    .otherwise(pl.col(col))
-                    .alias(col)
-                )
+            for col in numeric_cols:
+                if col in ["is_anomaly", "Threat_Score"]:
+                    continue
+
+                lower_bound = normal_data[col].quantile(0.05)
+                upper_bound = normal_data[col].quantile(0.95)
+
+                if lower_bound is None or upper_bound is None:
+                    continue
+
+                if "is_anomaly" in df.columns:
+                    expr = (
+                        pl.when(pl.col("is_anomaly") == True)
+                        .then(pl.col(col).clip(lower_bound, upper_bound))
+                        .otherwise(pl.col(col))
+                        .alias(col)
+                    )
+                else:
+                    expr = pl.col(col).clip(lower_bound, upper_bound).alias(col)
                 exprs.append(expr)
+
             cleaned_df = df.with_columns(exprs)
 
-    elif action == "impute":
-        numeric_cols = [
-            col
-            for col, dtype in zip(df.columns, df.dtypes)
-            if dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]
-        ]
+        # ── ACTION: MASK (Redacting Strings) ──
+        elif action == "mask":
+            string_cols = [c for c, dtype in zip(df.columns, df.dtypes) if dtype in [pl.Utf8, getattr(pl, "String", pl.Utf8)]]
+            safe_text_cols = []
+            
+            for col in string_cols:
+                if col in ["AI_Reason", "is_anomaly", "Threat_Score", "SHAP_Payload"]:
+                    continue
+                try:
+                    sample = df[col].drop_nulls()
+                    if len(sample) == 0:
+                        continue
+                    stripped = sample.str.replace_all(r"[₹$€£¥,\s]", "").str.strip_chars()
+                    numeric_ratio = stripped.str.contains(r"^-?\d+\.?\d*$").sum() / len(sample)
+                    if numeric_ratio > 0.5:
+                        continue # Skip numeric-like strings
+                    safe_text_cols.append(col)
+                except Exception:
+                    safe_text_cols.append(col)
 
-        target_cols = [
-            c
-            for c in numeric_cols
-            if c not in ["is_anomaly", "Threat_Score"] and not c.endswith("_freq")
-        ]
+            if safe_text_cols and "is_anomaly" in df.columns:
+                exprs = []
+                for col in safe_text_cols:
+                    expr = (
+                        pl.when(pl.col("is_anomaly") == True)
+                        .then(pl.lit("[REDACTED_ANOMALY]"))
+                        .otherwise(pl.col(col))
+                        .alias(col)
+                    )
+                    exprs.append(expr)
+                cleaned_df = df.with_columns(exprs)
+            else:
+                cleaned_df = df
 
-        if target_cols:
-            logger.info("Running K-Nearest Neighbors Predictive Imputation...")
+        # ── ACTION: MEDIAN FALLBACK ──
+        elif action == "median":
+            numeric_cols = [c for c, dtype in zip(df.columns, df.dtypes) if dtype in pl.NUMERIC_DTYPES]
+            for col in numeric_cols:
+                cleaned_df = cleaned_df.with_columns(pl.col(col).fill_null(pl.median(col)))
+
+        # ── ACTION: GODMODE KNN IMPUTATION ──
+        elif action == "impute":
+            logger.info("Initiating Godmode KNN Imputation...")
+            try:
+                from sklearn.impute import KNNImputer
+                from sklearn.preprocessing import StandardScaler
+            except ImportError:
+                return {"error": "scikit-learn is required. Run: pip install scikit-learn pandas"}
+
+            # 1. Isolate only mathematically valid numeric columns
+            numeric_cols = [
+                col for col, dtype in zip(df.columns, df.dtypes)
+                if dtype in pl.NUMERIC_DTYPES and col not in ["is_anomaly", "Threat_Score"] and not col.endswith("_freq")
+            ]
+
+            if not numeric_cols:
+                return {"error": "No continuous numeric columns found for KNN math."}
 
             pandas_df = df.to_pandas()
 
-            # BUG-12 FIX: Cast to bool explicitly to handle Int8 (0/1) values from parquet
-            clean_mask = pandas_df["is_anomaly"].astype(bool) == False
-            anomaly_mask = pandas_df["is_anomaly"].astype(bool) == True
+            # 2. If anomalies exist, punch them out (set to NaN) so KNN can overwrite them
+            if "is_anomaly" in pandas_df.columns:
+                anomaly_mask = pandas_df["is_anomaly"].astype(bool) == True
+                pandas_df.loc[anomaly_mask, numeric_cols] = np.nan
 
-            # H-03 FIX: Guard against all-anomaly datasets where clean_mask is empty
-            if not clean_mask.any():
-                logger.warning(
-                    "[IMPUTE] All rows flagged as anomalies — no clean rows to train KNN on. Skipping imputation."
-                )
-            else:
-                for col in target_cols:
-                    pandas_df.loc[anomaly_mask, col] = np.nan
+            numeric_df = pandas_df[numeric_cols]
 
-                imputer = KNNImputer(n_neighbors=5, weights="distance")
-                imputer.fit(pandas_df.loc[clean_mask, target_cols])
+            # 3. Godmode Scaling: Prevents large numbers (Fare) from overpowering small numbers (Age)
+            scaler = StandardScaler()
+            scaled_array = scaler.fit_transform(numeric_df)
 
-                pandas_df.loc[anomaly_mask, target_cols] = imputer.transform(
-                    pandas_df.loc[anomaly_mask, target_cols]
-                )
+            # 4. K-Nearest Neighbors Imputation
+            imputer = KNNImputer(n_neighbors=5, weights="distance")
+            imputed_scaled = imputer.fit_transform(scaled_array)
 
-                for col in target_cols:
-                    df = df.with_columns(pl.Series(name=col, values=pandas_df[col]))
+            # 5. Inverse Scale back to real-world numbers
+            imputed_array = scaler.inverse_transform(imputed_scaled)
 
-        cleaned_df = df
+            # 6. Stitch back into Polars DataFrame securely
+            imputed_pl = pl.from_pandas(pd.DataFrame(imputed_array, columns=numeric_cols))
 
-    else:
-        return {"error": f"Unknown cleaning action: {action}"}
+            for col in numeric_cols:
+                # Force the new imputed data to strictly match the original Polars datatype
+                df = df.with_columns(imputed_pl[col].cast(df[col].dtype, strict=False))
 
-    # Strip ALL engineered columns from the final output
-    engineered_suffixes = (
-        "_freq",
-        "_length",
-        "_digit_ratio",
-        "_upper_ratio",
-        "_special_ratio",
-    )
-    engineered_prefixes = ("nlp_pc",)
-    velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
-    always_drop = {"is_anomaly", "AI_Reason", "Threat_Score", "SHAP_Payload"}
+            cleaned_df = df
 
-    cols_to_drop = [
-        c
-        for c in cleaned_df.columns
-        if c in always_drop
-        or c.endswith(engineered_suffixes)
-        or any(c.startswith(p) for p in engineered_prefixes)
-        or c in velocity_names
-    ]
-    cleaned_df = cleaned_df.drop([c for c in cols_to_drop if c in cleaned_df.columns])
+        else:
+            return {"error": f"Unknown cleaning action: {action}"}
 
-    # ── GDPR PII SCRUBBER BEFORE EXPORT ──
-    try:
-        string_cols = [
-            col
-            for col, dtype in zip(cleaned_df.columns, cleaned_df.dtypes)
-            if dtype in [pl.Utf8, getattr(pl, "String", pl.Utf8)]
+        # ── FINAL STRIP & EXPORT ──
+        engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
+        engineered_prefixes = ("nlp_pc",)
+        velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
+        always_drop = {"is_anomaly", "AI_Reason", "Threat_Score", "SHAP_Payload"}
+
+        cols_to_drop = [
+            c for c in cleaned_df.columns
+            if c in always_drop
+            or c.endswith(engineered_suffixes)
+            or any(c.startswith(p) for p in engineered_prefixes)
+            or c in velocity_names
         ]
+        cleaned_df = cleaned_df.drop([c for c in cols_to_drop if c in cleaned_df.columns])
 
-        pii_exprs = []
-        for col in string_cols:
-            expr = (
-                pl.col(col)
-                .str.replace_all(
-                    r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
-                    "[REDACTED_EMAIL]",
+        # ── GDPR PII SCRUBBER ──
+        try:
+            string_cols = [c for c, dtype in zip(cleaned_df.columns, cleaned_df.dtypes) if dtype in [pl.Utf8, getattr(pl, "String", pl.Utf8)]]
+            pii_exprs = []
+            for col in string_cols:
+                expr = (
+                    pl.col(col)
+                    .str.replace_all(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", "[REDACTED_EMAIL]")
+                    .str.replace_all(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]")
+                    .str.replace_all(r"\b(?:\d[ -]*?){13,16}\b", "[REDACTED_CC]")
+                    .alias(col)
                 )
-                .str.replace_all(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]")
-                .str.replace_all(r"\b(?:\d[ -]*?){13,16}\b", "[REDACTED_CC]")
-                .alias(col)
-            )
-            pii_exprs.append(expr)
+                pii_exprs.append(expr)
 
-        if pii_exprs:
-            cleaned_df = cleaned_df.with_columns(pii_exprs)
-            logger.info("PII Scrubber applied to %d string columns.", len(string_cols))
+            if pii_exprs:
+                cleaned_df = cleaned_df.with_columns(pii_exprs)
+        except Exception as e:
+            logger.warning("Failed to run PII scrubber: %s", e)
+
+        # Write the final pristine dataset
+        cleaned_df.write_parquet(f"{session_dir}/cleaned_data.parquet")
+
+        return {
+            "status": "success",
+            "action_taken": action,
+            "original_rows": original_count,
+            "new_total": len(cleaned_df),
+        }
+
     except Exception as e:
-        logger.warning("Failed to run PII scrubber: %s", e)
-
-    cleaned_parquet_path = f"{session_dir}/cleaned_data.parquet"
-    cleaned_df.write_parquet(cleaned_parquet_path)
-
-    return {
-        "status": "success",
-        "action_taken": action,
-        "original_rows": original_count,
-        "new_total": len(cleaned_df),
-    }
+        logger.error(f"Cleaning Action '{action}' failed: {str(e)}")
+        return {"error": f"Data cleaning failed: {str(e)}"}
