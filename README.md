@@ -64,8 +64,8 @@
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/GhoshChinmay/DSV2.git
-cd DSV2
+git clone https://github.com/GhoshChinmay/DataSentinel.git
+cd DataSentinel
 ```
 
 ### 2. Backend Setup
@@ -229,7 +229,7 @@ The platform processes data through a **7-stage sequential pipeline**:
 ## 📁 Project Structure
 
 ```
-DSV2/
+DataSentinel/
 ├── backend/
 │   ├── main.py                  # FastAPI application & all route definitions
 │   ├── auth.py                  # API key authentication guard (constant-time comparison)
