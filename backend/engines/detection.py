@@ -178,9 +178,11 @@ def _format_value(val, col: str) -> str:
             pass
 
     # Percentage / probability columns
-    if any(kw in col_lower for kw in ("prob", "pct", "percent", "ratio", "rate", "score")) and 0 <= float(val) <= 1:
+    if any(kw in col_lower for kw in ("prob", "pct", "percent", "ratio", "rate", "score")):
         try:
-            return f"{float(val) * 100:.1f}%"
+            f_val = float(val)
+            if 0 <= f_val <= 1:
+                return f"{f_val * 100:.1f}%"
         except (ValueError, TypeError):
             pass
 
