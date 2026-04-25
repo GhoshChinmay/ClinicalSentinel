@@ -206,5 +206,5 @@ def clean_dataset(session_id: str, action: str = "drop"):
         }
 
     except Exception as e:
-        logger.error(f"Cleaning Action '{action}' failed: {str(e)}")
+        logger.error("Cleaning Action '%s' failed: %s", action, e)
         return {"error": f"Data cleaning failed: {str(e)}"}

@@ -1208,7 +1208,10 @@ def process_and_detect(
 
                 # Standard numeric feature with Z-score context
                 elif orig_feat in stats and stats[orig_feat]["std"] > 0:
-                    z = (row[orig_feat] - stats[orig_feat]["mean"]) / stats[orig_feat]["std"]
+                    raw_feat_val = row.get(orig_feat)
+                    if raw_feat_val is None or (hasattr(raw_feat_val, '__float__') is False and not isinstance(raw_feat_val, (int, float))):
+                        continue
+                    z = (float(raw_feat_val) - stats[orig_feat]["mean"]) / stats[orig_feat]["std"]
                     severity, context_phrase = _describe_deviation(z)
                     avg_readable = _format_value(stats[orig_feat]["mean"], orig_feat)
 
@@ -1421,7 +1424,8 @@ def process_and_detect(
     )
     if not os.path.exists(feedback_path):
         try:
-            open(feedback_path, "w").close()
+            from pathlib import Path
+            Path(feedback_path).touch(exist_ok=True)
             logger.info("Feedback log initialised at %s", feedback_path)
         except Exception as e:
             logger.warning("Could not initialise feedback log: %s", e)

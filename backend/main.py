@@ -9,7 +9,6 @@ import json
 
 # Load .env file before anything else reads environment variables
 from dotenv import load_dotenv
-from fastapi.responses import JSONResponse, StreamingResponse
 import io
 
 load_dotenv()
@@ -326,6 +325,25 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
 
         # Pass the already-loaded DataFrame to avoid double read
         result = process_and_detect(df=df, file_path=temp_file_path)
+
+        # Persist drift_report + recommendation in session metadata so
+        # the /api/data/ endpoint can return them later.
+        if isinstance(result, dict) and result.get("session_id"):
+            _meta_path = os.path.join(
+                _session_dir(result["session_id"]), "detection_meta.json"
+            )
+            try:
+                with open(_meta_path, "w") as _mf:
+                    json.dump(
+                        {
+                            "drift_report": result.get("drift_report"),
+                            "recommendation": result.get("recommendation"),
+                        },
+                        _mf,
+                    )
+            except Exception:
+                pass  # non-critical — detection still succeeds
+
         return result
 
     except Exception as e:
@@ -435,10 +453,22 @@ def get_data(
     if total_rows > limit:
         df = df.head(limit)
 
+    # Load drift + recommendation metadata saved at upload time
+    detection_meta: dict = {}
+    meta_path = os.path.join(session_dir, "detection_meta.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r") as mf:
+                detection_meta = json.load(mf)
+        except Exception:
+            pass
+
     return {
         "data": df.to_dicts(),
         "total_anomalies": total_anomalies,
         "total_rows": total_rows,  # To let frontend know actual count
+        "drift_report": detection_meta.get("drift_report"),
+        "recommendation": detection_meta.get("recommendation"),
     }
 
 
