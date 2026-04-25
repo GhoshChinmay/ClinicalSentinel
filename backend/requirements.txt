@@ -14,3 +14,8 @@ slowapi==0.1.9
 python-dotenv==1.1.0
 pytest==8.3.5
 httpx==0.28.1
+pyod==3.2.1
+scipy==1.17.1
+tensorflow==2.21.0
+xgboost==3.2.0
+dice_ml==0.12

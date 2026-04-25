@@ -180,7 +180,7 @@ CRITICAL EXECUTION RULES:
                 messages=messages,
                 model=MODEL_REASONING,
                 temperature=0.1 if attempt == 0 else 0.4, # Increase creativity if stuck
-                max_tokens=2048,
+                max_tokens=4096,
                 timeout=20,
             )
 
@@ -225,7 +225,7 @@ CRITICAL EXECUTION RULES:
                     result_df = con.query(sql_query).pl()
                     
                     # ── Semantic Reflection ──
-                    if len(result_df) == 0 and attempt < (MAX_ATTEMPTS - 1) and not is_edit:
+                    if len(result_df) == 0 and attempt == 0 and not is_edit:
                         logger.info("0 Rows Returned. Triggering Semantic Reflection...")
                         yield f"data: {json.dumps({'status': 'Optimization: 0 rows matched. Broadening search parameters...'})}\n\n"
                         messages.append({"role": "assistant", "content": raw_response})

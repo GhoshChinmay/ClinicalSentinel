@@ -159,11 +159,17 @@ def clean_dataset(session_id: str, action: str = "drop"):
         engineered_suffixes = ("_freq", "_length", "_digit_ratio", "_upper_ratio", "_special_ratio")
         engineered_prefixes = ("nlp_pc",)
         velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
-        always_drop = {"is_anomaly", "AI_Reason", "Threat_Score", "SHAP_Payload"}
+        
+        # FIX: Expanded Wipe List to include ALL new Godmode features
+        always_drop = {
+            "is_anomaly", "AI_Reason", "Threat_Score", "SHAP_Payload", 
+            "Counterfactual_Payload", "lof_score", "ecod_score", "lstm_anomaly_score"
+        }
 
         cols_to_drop = [
             c for c in cleaned_df.columns
             if c in always_drop
+            or c.startswith("Score_CI") # Catches hidden Scikit-Learn/PyOD confidence intervals
             or c.endswith(engineered_suffixes)
             or any(c.startswith(p) for p in engineered_prefixes)
             or c in velocity_names

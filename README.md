@@ -35,18 +35,19 @@
 
 | Category | Feature | Description |
 |----------|---------|-------------|
-| 🔍 **Detection** | Isolation Forest + SHAP | Statistical anomaly detection with per-row AI explainability and threat scoring |
-| 🧠 **Neuro-Symbolic AI** | Logic Gate Engine | Groq LLM generates domain-specific mathematical validation rules (e.g., `age > 0`, `salary < revenue`) that are compiled into Polars expressions |
-| 🛡️ **Privacy** | PII Scanner & Vault | Local-edge regex + heuristic PII detection with GDPR-compliant SHA-256 pseudonymisation — sensitive data never leaves the machine |
-| ⚡ **LLM Acceleration** | Groq LPU (Llama 3.3 70B) | Millisecond-latency AI inference for SQL generation, narrative insights, and rule synthesis |
-| 💬 **Natural Language Query** | Agentic RAG Chat | Ask questions in plain English — the agent generates SQL, executes it via DuckDB, and self-heals on errors with a retry loop |
+| 🔍 **Godmode Detection** | IF + SHAP + LSTM | Statistical anomaly detection coupled with sequential pattern learning, per-row explainability, and threat scoring |
+| 🛡️ **Drift & Counterfactuals**| KS-Test & DiCE | Real-time dataset drift detection and counterfactual recommendations on how to remediate anomalies |
+| 🧠 **Neuro-Symbolic AI** | Logic Gate Engine | Groq LLM generates domain-specific mathematical validation rules compiled into Polars expressions |
+| 🛡️ **Privacy** | PII Scanner & Vault | Local-edge regex + heuristic PII detection with GDPR-compliant SHA-256 pseudonymisation |
+| ⚡ **LLM Acceleration** | Groq LPU (Llama 3.3) | Millisecond-latency AI inference for SQL generation, narrative insights, and rule synthesis |
+| 💬 **Natural Language Query** | Agentic RAG Chat | Ask questions in plain English — the agent generates SQL, executes it via DuckDB, and self-heals |
 | 🧹 **Smart Cleaning** | Multi-Strategy Engine | Drop, quarantine, winsorize, mask, or KNN-impute anomalies with before/after dataset comparison |
-| 📊 **Visual Analytics** | Interactive Dashboards | Correlation heatmaps, distribution histograms, scatter plots, and categorical breakdowns powered by Recharts |
-| 📋 **Quality Reports** | Exportable Scorecards | AI-generated data quality reports with health scores, missing data maps, and column profiling |
+| 📊 **Visual Analytics** | Interactive Dashboards| Correlation heatmaps, distribution histograms, scatter plots, and categorical breakdowns powered by Recharts |
+| 📋 **Quality Reports** | Exportable Scorecards| AI-generated data quality reports with health scores, missing data maps, and column profiling |
 | 🔌 **Live DB Connect** | PostgreSQL Bridge | Connect to production databases for real-time querying without data movement |
-| 📚 **Teachable AI** | Business Dictionary | Teach the agent domain-specific business terms and SQL logic that persist across sessions |
+| 🚀 **High Throughput** | In-Memory Streaming | Optimized streaming responses (`io.BytesIO`) for heavy dataset exports to prevent I/O bottlenecks |
 | 🔒 **Audit Trail** | SOC2-Ready Logging | Immutable JSONL audit trail of every AI-driven data mutation for compliance |
-| 🎬 **Cinematic UI** | Premium Experience | GSAP scroll-driven animations, Three.js particle simulations (PurificationCore & NeuralCore), Lenis smooth scrolling |
+| 🎬 **Cinematic UI** | Premium Experience | GSAP scroll-driven animations, Three.js particle simulations, Lenis smooth scrolling |
 
 ---
 
@@ -150,48 +151,80 @@ The application opens at **http://localhost:3000**.
 
 DataSentinel uses a **decoupled client-server architecture** with a multi-engine backend design:
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     BROWSER — Next.js 16 + React 19                     │
-│  ┌────────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐  │
-│  │ 3D Landing │ │Detection │ │ Insights │ │ Cleaning │ │ NL Query   │  │
-│  │ Three.js   │ │Dashboard │ │  Panel   │ │ Compare  │ │ (SSE Chat) │  │
-│  └────────────┘ └──────────┘ └──────────┘ └──────────┘ └────────────┘  │
-│                     Axios API Service + Auth Interceptor                 │
-└──────────────────────────────┬──────────────────────────────────────────┘
-                               │ REST API / Server-Sent Events (SSE)
-┌──────────────────────────────▼──────────────────────────────────────────┐
-│                    FastAPI Backend (Python 3.11+)                        │
-│  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │  API Gateway: Rate Limiting (SlowAPI) · Auth Guard · CORS · Validation  │
-│  └──────┬─────┬──────┬──────┬──────┬──────┬──────┬──────┬────────────┘ │
-│         │     │      │      │      │      │      │      │              │
-│    ┌────▼──┐┌─▼───┐┌─▼───┐┌─▼───┐┌─▼───┐┌─▼───┐┌─▼───┐┌─▼────────┐   │
-│    │ PII   ││Detec││Logic││ NLP ││Clean││Query││Insig││Visualiz- │   │
-│    │Scanner││tion ││Gate ││Bridg││  -  ││  -  ││hts  ││ation     │   │
-│    │Regex+ ││IFore││Neuro││TF-ID││Polar││Duck ││Stats││Engine    │   │
-│    │SHA256 ││st+  ││Symbo││F+SVD││s    ││DB+  ││+LLM ││          │   │
-│    │       ││SHAP ││lic  ││     ││     ││Groq ││     ││          │   │
-│    └───────┘└─────┘└─────┘└─────┘└─────┘└──┬──┘└──┬──┘└──────────┘   │
-│                                             │      │                   │
-│  ┌──────────────────────────────────────────▼──────▼─────────────────┐ │
-│  │  Groq Client: Centralized LLM wrapper with retry + error handling │ │
-│  │  Schema Enforcer: Data contract validation on upload              │ │
-│  │  Business Dictionary: Persistent RAG knowledge base (JSON)        │ │
-│  └────────────────────────────────────────────────────────────────────┘ │
-│                                                                        │
-│  ┌────────────────────────────┐  ┌─────────────────────────────────┐   │
-│  │ 💾 Session Storage         │  │ 📝 Audit Trail                  │   │
-│  │ Parquet files in           │  │ Immutable JSONL logs in         │   │
-│  │ sessions/{uuid}/           │  │ logs/audit_trail.jsonl          │   │
-│  └────────────────────────────┘  └─────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
-                               │
-                    ┌──────────▼───────────┐
-                    │   ☁️  Groq Cloud LPU  │
-                    │   Llama 3.3 70B      │
-                    │   (AI Inference)      │
-                    └──────────────────────┘
+```mermaid
+graph TD
+    %% Browser Layer
+    subgraph Browser["BROWSER — Next.js 16 + React 19"]
+        direction LR
+        L["3D Landing
+Three.js"]
+        D["Detection
+Dashboard"]
+        I["Insights
+Panel"]
+        C["Cleaning
+Compare"]
+        Q["NL Query
+(SSE Chat)"]
+    end
+
+    %% API Layer
+    Axios["Axios API Service + Auth Interceptor"]
+    Browser --> Axios
+    
+    %% Backend Layer
+    subgraph Backend["FastAPI Backend (Python 3.11+)"]
+        Gateway["API Gateway: Rate Limiting · Auth Guard · CORS"]
+        
+        subgraph Engines["AI & Processing Engines"]
+            direction LR
+            PII["PII Scanner
+Regex+SHA256"]
+            Det["Detection
+IF+LSTM+SHAP"]
+            Log["Logic Gate
+Neuro-Symbolic"]
+            Drift["Drift & DiCE
+KS-Test+Counterfactuals"]
+            Clean["Cleaning
+Polars"]
+            Query["Query
+DuckDB+Groq"]
+            Vis["Visualization
+Engine"]
+        end
+        
+        Gateway --> PII
+        Gateway --> Det
+        Gateway --> Log
+        Gateway --> Drift
+        Gateway --> Clean
+        Gateway --> Query
+        Gateway --> Vis
+        
+        GroqClient["Groq Client: LLM wrapper with retry"]
+        Schema["Schema Enforcer: Data contract validation"]
+        Dict["Business Dictionary: RAG knowledge base"]
+        
+        Engines --> GroqClient
+    end
+    
+    Axios -- "REST API / SSE" --> Gateway
+    
+    %% Storage Layer
+    subgraph Storage["Storage Layer"]
+        Session["💾 Session Storage
+Parquet files"]
+        Audit["📝 Audit Trail
+JSONL logs"]
+    end
+    
+    Backend --> Storage
+    
+    %% External
+    GroqCloud["☁️ Groq Cloud LPU
+Llama 3.3 70B"]
+    GroqClient -- "AI Inference" --> GroqCloud
 ```
 
 ---
@@ -200,18 +233,14 @@ DataSentinel uses a **decoupled client-server architecture** with a multi-engine
 
 The platform processes data through a **7-stage sequential pipeline**:
 
-```
- ┌──────────┐    ┌──────────┐    ┌──────────────┐    ┌──────────┐
- │ 1. UPLOAD│───▶│2. PII    │───▶│3. ANOMALY    │───▶│4. AI     │
- │ CSV/JSON/│    │  VAULT   │    │  DETECTION   │    │ INSIGHTS │
- │ Excel    │    │  SHA-256 │    │  IForest+SHAP│    │ Stats+LLM│
- └──────────┘    └──────────┘    └──────────────┘    └──────────┘
-                                                          │
- ┌──────────┐    ┌──────────┐    ┌──────────────┐         │
- │7. EXPORT │◀───│6. QUERY  │◀───│5. SMART      │◀────────┘
- │ Report + │    │  & EXPLORE│    │  CLEANING    │
- │ Download │    │  NL → SQL │    │  Drop/Quarant│
- └──────────┘    └──────────┘    └──────────────┘
+```mermaid
+flowchart LR
+    1["1. UPLOAD\nCSV/JSON/Excel"] --> 2["2. PII VAULT\nSHA-256"]
+    2 --> 3["3. ANOMALY DETECTION\nIF+LSTM+SHAP"]
+    3 --> 4["4. AI INSIGHTS\nStats+LLM"]
+    4 --> 5["5. SMART CLEANING\nDrop/Quarantine"]
+    5 --> 6["6. QUERY & EXPLORE\nNL → SQL"]
+    6 --> 7["7. EXPORT\nReport + Download"]
 ```
 
 | Stage | Engine | What Happens |

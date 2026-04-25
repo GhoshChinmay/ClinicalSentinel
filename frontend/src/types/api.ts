@@ -19,7 +19,22 @@ export interface AnomalyRow {
   AI_Reason: string;
   Threat_Score: number;
   SHAP_Payload?: string;
+  Counterfactual_Payload?: string;
+  lof_score?: number;
+  lstm_anomaly_score?: number;
+  ecod_score?: number;
   [key: string]: unknown;
+}
+
+export interface DriftedFeature {
+  feature: string;
+  ks_stat: number;
+  p_value: number;
+}
+
+export interface DriftReport {
+  drifted_features: DriftedFeature[];
+  baseline_present: boolean;
 }
 
 export interface SessionDataResponse {
@@ -27,6 +42,8 @@ export interface SessionDataResponse {
   total_anomalies: number;
   // FE-06 FIX: total_rows is returned by the backend but was missing from this interface
   total_rows: number;
+  drift_report?: DriftReport;
+  recommendation?: string;
 }
 
 export interface CleanResponse {

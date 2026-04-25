@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import api from '@/services/api.service';
-import type { AnomalyRow, SessionDataResponse } from '@/types/api';
+import type { AnomalyRow, DriftReport, SessionDataResponse } from '@/types/api';
 
 /* ─── Hook ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -21,6 +21,8 @@ export function useDetection(sessionId: string) {
   const [threshold, setThreshold] = useState<number>(0);
   const [minSliderBound, setMinSliderBound] = useState<number>(0);
   const [feedbackMap, setFeedbackMap] = useState<Record<number, 'correct' | 'incorrect'>>({});
+  const [driftReport, setDriftReport] = useState<DriftReport | undefined>(undefined);
+  const [recommendation, setRecommendation] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!sessionId) {
@@ -38,6 +40,8 @@ export function useDetection(sessionId: string) {
         if (res.data && Array.isArray(res.data.data)) {
           setData(res.data.data);
           setTotalAnomalies(res.data.total_anomalies || 0);
+          setDriftReport(res.data.drift_report);
+          setRecommendation(res.data.recommendation);
 
           const threatScores = res.data.data
             .map((r) => r.Threat_Score)
@@ -95,5 +99,7 @@ export function useDetection(sessionId: string) {
     minSliderBound,
     feedbackMap,
     submitFeedback,
+    driftReport,
+    recommendation,
   };
 }

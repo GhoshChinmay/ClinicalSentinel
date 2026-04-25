@@ -9,6 +9,8 @@ import json
 
 # Load .env file before anything else reads environment variables
 from dotenv import load_dotenv
+from fastapi.responses import JSONResponse, StreamingResponse
+import io
 
 load_dotenv()
 
@@ -577,8 +579,11 @@ def download_data(request: Request, session_id: str, source: str = Query("cleane
 
     df = pl.read_parquet(parquet_path)
 
-    # SAFE-04 FIX: Strip ALL internal/engineered columns (not just is_anomaly/Threat_Score/AI_Reason)
-    internal_cols_set = {"is_anomaly", "Threat_Score", "AI_Reason", "SHAP_Payload"}
+    # ── FIX 1: AGGRESSIVE WIPE LIST FOR GODMODE FEATURES ──
+    internal_cols_set = {
+        "is_anomaly", "Threat_Score", "AI_Reason", "SHAP_Payload", 
+        "Counterfactual_Payload", "lof_score", "lstm_anomaly_score", "ecod_score"
+    }
     engineered_suffixes = (
         "_freq",
         "_length",
@@ -588,21 +593,29 @@ def download_data(request: Request, session_id: str, source: str = Query("cleane
     )
     engineered_prefixes = ("nlp_pc",)
     velocity_names = {"velocity_24h_sum", "velocity_1h_count"}
+    
     cols_to_drop = [
         c
         for c in df.columns
         if c in internal_cols_set
+        or c.startswith("Score_CI")  # Safeguard for hidden Scikit-Learn/PyOD CI columns
         or c.endswith(engineered_suffixes)
         or any(c.startswith(p) for p in engineered_prefixes)
         or c in velocity_names
     ]
     if cols_to_drop:
-        df = df.drop(cols_to_drop)
+        df = df.drop([c for c in cols_to_drop if c in df.columns])
 
-    csv_path = f"{session_dir}/{csv_filename}"
-    df.write_csv(csv_path)
+    # ── FIX 2: IN-MEMORY STREAMING (BYPASSES WINDOWS FILE-SYNC CRASH) ──
+    buffer = io.BytesIO()
+    df.write_csv(buffer)
+    buffer.seek(0) # Rewind the buffer so FastAPI can read it from the beginning
 
-    return FileResponse(path=csv_path, media_type="text/csv", filename=csv_filename)
+    return StreamingResponse(
+        buffer, 
+        media_type="text/csv", 
+        headers={"Content-Disposition": f'attachment; filename="{csv_filename}"'}
+    )
 
 
 @app.get("/api/quarantine/{session_id}", dependencies=[Depends(require_api_key)])
