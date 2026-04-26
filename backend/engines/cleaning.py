@@ -115,9 +115,23 @@ def clean_dataset(session_id: str, action: str = "drop"):
                 return {"error": "scikit-learn is required. Run: pip install scikit-learn pandas"}
 
             # 1. Isolate only mathematically valid numeric columns
+            # Exclude internal/engineered suffixes so we only impute user-owned data.
+            _IMPUTE_EXCLUDE_COLS = {
+                "is_anomaly", "Threat_Score", "lof_score", "ecod_score",
+                "lstm_anomaly_score", "logic_violation",
+            }
+            _IMPUTE_EXCLUDE_SUFFIXES = (
+                "_freq", "_length", "_digit_ratio", "_upper_ratio",
+                "_special_ratio", "_entity_z",
+            )
+            _IMPUTE_EXCLUDE_PREFIXES = ("nlp_pc", "Score_CI", "velocity_")
+
             numeric_cols = [
                 col for col, dtype in zip(df.columns, df.dtypes)
-                if dtype in pl.NUMERIC_DTYPES and col not in ["is_anomaly", "Threat_Score"] and not col.endswith("_freq")
+                if dtype in pl.NUMERIC_DTYPES
+                and col not in _IMPUTE_EXCLUDE_COLS
+                and not any(col.endswith(s) for s in _IMPUTE_EXCLUDE_SUFFIXES)
+                and not any(col.startswith(p) for p in _IMPUTE_EXCLUDE_PREFIXES)
             ]
 
             if not numeric_cols:
@@ -132,9 +146,39 @@ def clean_dataset(session_id: str, action: str = "drop"):
 
             numeric_df = pandas_df[numeric_cols]
 
+            # Guard: if ALL values are NaN (i.e., 100% anomaly rate), KNN has nothing
+            # to impute from. Return the original data gracefully instead of crashing.
+            if numeric_df.isna().all().all():
+                logger.warning(
+                    "KNN Impute aborted: all numeric columns are fully NaN (100%% anomaly rate). "
+                    "Returning original data unchanged."
+                )
+                cleaned_df = df
+                cleaned_df.write_parquet(f"{session_dir}/cleaned_data.parquet")
+                return {
+                    "status": "success",
+                    "action_taken": action,
+                    "original_rows": original_count,
+                    "new_total": len(cleaned_df),
+                    "warning": "KNN imputation skipped — all rows were anomalous (no clean anchor rows).",
+                }
+
             # 3. Godmode Scaling: Prevents large numbers (Fare) from overpowering small numbers (Age)
             scaler = StandardScaler()
             scaled_array = scaler.fit_transform(numeric_df)
+
+            # Secondary guard: scaler may drop all-constant/NaN columns → shape (N, 0).
+            if scaled_array.shape[1] == 0:
+                logger.warning("KNN Impute aborted: StandardScaler produced 0 features.")
+                cleaned_df = df
+                cleaned_df.write_parquet(f"{session_dir}/cleaned_data.parquet")
+                return {
+                    "status": "success",
+                    "action_taken": action,
+                    "original_rows": original_count,
+                    "new_total": len(cleaned_df),
+                    "warning": "KNN imputation skipped — no valid numeric features after scaling.",
+                }
 
             # 4. K-Nearest Neighbors Imputation
             imputer = KNNImputer(n_neighbors=5, weights="distance")

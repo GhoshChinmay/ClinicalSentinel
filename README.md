@@ -265,7 +265,6 @@ DataSentinel/
 │   ├── schema.py                # Data contract validation (SchemaEnforcer)
 │   ├── utils.py                 # Session management, logging, audit trail utilities
 │   ├── groq_client.py           # Centralized Groq LLM client with retry logic
-│   ├── stress_test.py           # End-to-end stress test utility
 │   ├── engines/
 │   │   ├── __init__.py          # Re-exports all engine functions
 │   │   ├── detection.py         # Isolation Forest + SHAP anomaly detection pipeline
@@ -484,16 +483,6 @@ npx tsc --noEmit
 
 # ESLint linting (zero errors expected)
 npx eslint src/
-```
-
-### Stress Test
-
-Run the end-to-end stress test against a running backend:
-
-```bash
-cd backend
-python stress_test.py
-# Generates: stress_test_report.md
 ```
 
 ---

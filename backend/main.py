@@ -312,8 +312,8 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
                     df = pl.from_pandas(pd.read_csv(temp_file_path, low_memory=False))
                 except Exception as inner_e:
                     return JSONResponse(
-                        status_code=500,
-                        content={"error": f"Fatal read error: {str(inner_e)}"},
+                        status_code=400,
+                        content={"error": f"Fatal read error (invalid or corrupted file): {str(inner_e)}"},
                     )
 
         validation = SchemaEnforcer.validate(df, dataset_name=file.filename)

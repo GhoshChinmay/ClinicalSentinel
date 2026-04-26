@@ -98,4 +98,4 @@ class TestSQLInjectionGuard:
             "UPDATE my_table SET amount=1 WHERE amount > 100; UPDATE my_table SET amount=2",
         )
         assert "error" in edit_result
-        assert "Multi-statement" in edit_result["error"]
+        assert "multi-statement" in edit_result["error"].lower()
