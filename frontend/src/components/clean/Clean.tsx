@@ -346,8 +346,8 @@ export default function Clean({
           const isRecommended = method.id === recommendedMethod;
           return (
             <div key={method.id} className="group relative w-full h-[280px] [perspective:1000px]">
-              <div className="w-full h-full transition-transform duration-700 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
-                <div className={`absolute inset-0 [backface-visibility:hidden] bg-neutral-900 border ${isRecommended ? 'border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-neutral-800'} p-8 rounded-2xl flex flex-col`}>
+              <div className="w-full h-full transition-transform duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
+                <div className={`absolute inset-0 [backface-visibility:hidden] group-hover:pointer-events-none bg-neutral-900 border ${isRecommended ? 'border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-neutral-800'} p-8 rounded-2xl flex flex-col`}>
                   {isRecommended && (
                     <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs font-bold px-4 py-1.5 rounded-bl-lg rounded-tr-xl uppercase tracking-wider z-10 shadow-lg">
                       AI Pick
@@ -364,7 +364,7 @@ export default function Clean({
                   <h3 className="text-xl font-semibold mb-2">{method.title}</h3>
                   <p className="text-neutral-400 text-sm flex-1">{method.techDesc}</p>
                 </div>
-                <div className={`absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-neutral-800 border ${method.border} p-8 rounded-2xl flex flex-col justify-between`}>
+                <div className={`absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] pointer-events-none group-hover:pointer-events-auto bg-neutral-800 border ${method.border} p-8 rounded-2xl flex flex-col justify-between`}>
                   <div>
                     <div className="flex items-center mb-3">
                       <Icon className={`w-5 h-5 mr-2 ${method.color}`} />

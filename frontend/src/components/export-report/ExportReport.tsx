@@ -1,7 +1,7 @@
 /* ─── Imports ────────────────────────────────────────────────────────────────────────────── */
 
 import { useState, useEffect } from 'react';
-import { DownloadCloud, AlertTriangle } from 'lucide-react';
+import { DownloadCloud, AlertTriangle, ClipboardList } from 'lucide-react';
 import api from '@/services/api.service';
 import { API_BASE } from '@/constants/config';
 
@@ -48,11 +48,19 @@ const getReadinessColor = (readiness: string): string => {
 export default function ExportReport({ sessionId }: ExportReportProps): React.JSX.Element {
   const [report, setReport] = useState<QualityReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get(`/api/report/${sessionId}`)
       .then((res) => setReport(res.data))
-      .catch((err) => console.error('Failed to fetch report', err))
+      .catch((err) => {
+        const msg: string =
+          err?.response?.data?.error ||
+          err?.message ||
+          'An unknown error occurred.';
+        setError(msg);
+        console.error('Failed to fetch report', err);
+      })
       .finally(() => setIsLoading(false));
   }, [sessionId]);
 
@@ -69,9 +77,23 @@ export default function ExportReport({ sessionId }: ExportReportProps): React.JS
   }
 
   if (!report) {
+    const isCleaningMissing = error?.toLowerCase().includes('cleaned dataset not found') ||
+      error?.toLowerCase().includes('no cleaned data');
     return (
-      <div className="text-center p-12 text-red-500">
-        Failed to load report.
+      <div className="w-full bg-[#0A0A0A] border border-neutral-800 rounded-2xl p-12 shadow-2xl mt-6 flex flex-col items-center justify-center text-center">
+        <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mb-6">
+          {isCleaningMissing
+            ? <ClipboardList className="w-8 h-8 text-red-400" />
+            : <AlertTriangle className="w-8 h-8 text-red-400" />}
+        </div>
+        <h3 className="text-xl font-bold text-white mb-2">
+          {isCleaningMissing ? 'Cleaning Step Required' : 'Report Unavailable'}
+        </h3>
+        <p className="text-neutral-400 max-w-sm">
+          {isCleaningMissing
+            ? 'No cleaned dataset was found for this session. Please complete the Cleaning step before viewing the Quality Export report.'
+            : (error ?? 'Failed to load report. Please try again.')}
+        </p>
       </div>
     );
   }
