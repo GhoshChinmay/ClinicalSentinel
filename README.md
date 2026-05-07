@@ -170,9 +170,16 @@ venv\Scripts\activate
 # On macOS/Linux:
 source venv/bin/activate
 
-# Install dependencies:
+# Install core forensic dependencies:
 pip install -r requirements.txt
+
+# NOTE: Advanced forensic layers (F2: GNN Collusion) require PyTorch.
+# If you need GNN capabilities, follow the specific install instructions
+# inside `requirements.txt` for your CPU/CUDA environment.
 ```
+
+> [!IMPORTANT]
+> The `requirements.txt` file is categorized into core stacks and the **7-Layer Forensic Architecture** dependencies. Please review the internal comments in `requirements.txt` if you need to enable hardware-accelerated GNN detection.
 
 **Configure Backend Environment Variables:**
 Create a `.env` file in the `backend` directory:
