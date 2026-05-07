@@ -105,12 +105,17 @@ def calculate_composite_fri(
         layer5_scores[inv_id] = float(np.mean(e_scores)) if e_scores else 0.0
 
     # ─────────────────────────────────────────────────────────────────────────
-    # LAYER 3 — Statistical Outlier (Threat_Score from Isolation Forest)
+    # LAYER 3 — Statistical Outlier (MinHash LSH Cross-Site Copy-Paste)
     # ─────────────────────────────────────────────────────────────────────────
     layer3_scores = {}
-    if "Threat_Score" in pandas_df.columns:
-        for investigator, grp in grouped:
-            layer3_scores[str(investigator)] = float(grp["Threat_Score"].mean())
+    try:
+        from engines.crosssite_matcher import detect_crosssite_copypaste
+        if metric_cols:
+            lsh_results = detect_crosssite_copypaste(df, investigator_col, metric_cols)
+            for inv_id, report in lsh_results.items():
+                layer3_scores[inv_id] = report.get("LSH_copypaste_score", 0.0)
+    except Exception as e:
+        logger.warning(f"FRI: Cross-site matcher layer failed: {e}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # LAYER 6 — Clinical Plausibility (logic_violation from Logic Gate)

@@ -120,14 +120,25 @@ def detect_collusion_networks(
         edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
         data = Data(x=x, edge_index=edge_index)
 
-        # 4. Propagate Risk via GCN
-        # (In production this model would be pre-trained on historic fraud.
-        # Here we do a structural forward-pass to measure node activation based on neighbors.)
-        model = CollusionGCN(num_features=2)
-        model.eval()
-
-        with torch.no_grad():
-            collusion_scores = model(data).numpy().flatten()
+        # 4. Propagate Risk via Heuristic Network Smoothing
+        # (Replacing untrained random-weight GNN with a deterministic structural risk algorithm
+        # as a clearly documented heuristic fallback for the IEEE paper).
+        base_threat = x[:, 0].clone()
+        collusion_scores = base_threat.clone()
+        
+        for i in range(len(investigators)):
+            # Find neighbors where this node is the source
+            neighbor_mask = edge_index[0] == i
+            neighbors = edge_index[1][neighbor_mask]
+            
+            if len(neighbors) > 0:
+                neighbor_threat = base_threat[neighbors].mean()
+                # Heuristic: Combine own threat with neighbor threat
+                # If neighbors are high risk, it increases own risk.
+                # Normalized by 1.4 to keep within [0, 1] range conceptually.
+                collusion_scores[i] = torch.clamp((base_threat[i] + 0.5 * neighbor_threat) / 1.5, 0.0, 1.0)
+                
+        collusion_scores = collusion_scores.numpy()
 
         # 5. Extract Collusion Risk Cluster Score (CRCS)
         reports: dict = {}

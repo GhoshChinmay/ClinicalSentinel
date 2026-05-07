@@ -69,7 +69,17 @@ def audit_against_synthetic(df: pl.DataFrame, investigator_col: str, metric_cols
             
         # 1. Generate the Ghost Site (Synthetic Reference)
         try:
-            synthetic_reference = generate_synthetic_twin(pandas_df, target_metrics)
+            if "Threat_Score" in pandas_df.columns:
+                inv_scores = pandas_df.groupby(investigator_col)["Threat_Score"].mean()
+                num_clean = max(1, int(len(inv_scores) * 0.4))
+                cleanest_invs = inv_scores.nsmallest(num_clean).index
+                train_data = pandas_df[pandas_df[investigator_col].isin(cleanest_invs)]
+                logger.info(f"Training SynthAudit on cleanest 40% of investigators (N={len(cleanest_invs)}).")
+            else:
+                train_data = pandas_df
+                logger.warning("Threat_Score not found. Training SynthAudit on all data.")
+                
+            synthetic_reference = generate_synthetic_twin(train_data, target_metrics)
         except Exception as e:
             logger.warning(f"Failed to generate synthetic twin: {e}")
             return {}

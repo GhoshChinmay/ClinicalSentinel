@@ -16,6 +16,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { useDetection } from '@/hooks/use-detection';
+import BenfordChart from './BenfordChart';
 
 /* ─── Types ──────────────────────────────────────────────────────────────────────────────── */
 
@@ -183,6 +184,9 @@ export default function Detection({ sessionId }: DetectionProps): React.JSX.Elem
           </p>
         </motion.div>
       )}
+
+      {/* ── Benford's Law Chart ───────────────────────────────────────────────── */}
+      {data.length > 0 && <BenfordChart data={data} />}
 
       {/* ── Threat Score Slider ───────────────────────────────────────────────── */}
       {hasThreatScores && (

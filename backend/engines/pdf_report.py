@@ -42,13 +42,13 @@ def generate_21cfr_pdf(session_id: str, fri_results: dict) -> str:
     pdf.cell(0, 10, "Executive Summary", 0, 1)
     
     pdf.set_font("Arial", "", 10)
-    if "composite_results" in fri_results:
-        investigators = list(fri_results["composite_results"].keys())
+    if "investigators" in fri_results:
+        investigators = list(fri_results["investigators"].keys())
         highest_risk = None
         highest_score = 0
-        for inv, data in fri_results["composite_results"].items():
-            if data["composite_fri"] > highest_score:
-                highest_score = data["composite_fri"]
+        for inv, data in fri_results["investigators"].items():
+            if data["fri_score"] > highest_score:
+                highest_score = data["fri_score"]
                 highest_risk = inv
                 
         pdf.multi_cell(0, 6, f"Total Investigators Analyzed: {len(investigators)}")
@@ -61,19 +61,21 @@ def generate_21cfr_pdf(session_id: str, fri_results: dict) -> str:
     pdf.cell(0, 10, "Investigator Profiles & FRI Breakdown", 0, 1)
     pdf.set_font("Arial", "", 10)
 
-    if "composite_results" in fri_results:
-        for inv, data in fri_results["composite_results"].items():
+    if "investigators" in fri_results:
+        for inv, data in fri_results["investigators"].items():
             pdf.set_font("Arial", "B", 10)
             pdf.cell(0, 8, f"Investigator: {inv}", 0, 1)
             pdf.set_font("Arial", "", 10)
             
-            pdf.cell(50, 6, f"Composite FRI: {data.get('composite_fri', 0):.2f}", 0, 1)
-            pdf.cell(50, 6, f"Synthetic Deviation Score: {data.get('synthetic_deviation_score', 0):.2f}", 0, 1)
-            pdf.cell(50, 6, f"Cohort Drift Score: {data.get('cohort_drift_score', 0):.2f}", 0, 1)
-            pdf.cell(50, 6, f"InvestiProfile Risk: {data.get('investi_profile_risk', 0):.2f}", 0, 1)
+            pdf.cell(50, 6, f"Composite FRI: {data.get('fri_score', 0):.2f}", 0, 1)
+            pdf.cell(50, 6, f"Synthetic Deviation Score: {data.get('sds_score', 0):.2f}", 0, 1)
+            pdf.cell(50, 6, f"Cohort Drift Score: {data.get('pds_score', 0):.2f}", 0, 1)
             
-            if "shap_explanations" in data:
-                pdf.multi_cell(0, 6, f"Key Driver: {data['shap_explanations'].get('primary_driver', 'N/A')}")
+            l7 = data.get('layer_breakdown', {}).get('L7_behavioral_profile', 0)
+            pdf.cell(50, 6, f"InvestiProfile Risk: {l7:.2f}", 0, 1)
+            
+            if "narrative" in data:
+                pdf.multi_cell(0, 6, f"Narrative: {data['narrative']}")
             pdf.ln(5)
 
     # Electronic Signature Section
