@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────
-   DataSentinel — Shared TypeScript Interfaces
+   ClinicalSentinel — Shared TypeScript Interfaces
    Replaces pervasive `any` types across all components.
    ───────────────────────────────────────────────────────────── */
 

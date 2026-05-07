@@ -24,10 +24,7 @@ class TestGenerateInsightsFallback:
             mock_groq.side_effect = Exception("Groq API not reachable")
             insights_result = generate_insights(session_id)
 
-        assert "ai_narrative" in insights_result
-        assert isinstance(insights_result["ai_narrative"], list)
-        assert len(insights_result["ai_narrative"]) >= 1
-
-        for sentence in insights_result["ai_narrative"]:
-            assert isinstance(sentence, str)
-            assert len(sentence) > 0
+        assert "summary" in insights_result
+        assert "executive_summary" in insights_result["summary"]
+        assert "key_findings" in insights_result["summary"]
+        assert isinstance(insights_result["summary"]["key_findings"], list)

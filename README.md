@@ -1,526 +1,93 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-  <img src="https://img.shields.io/badge/Next.js-16-000000?style=for-the-badge&logo=next.js&logoColor=white" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
-  <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
-  <img src="https://img.shields.io/badge/Groq_LPU-Llama_3.3_70B-FF6B35?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Polars-1.27-CD792C?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/DuckDB-1.2-FFF000?style=for-the-badge&logo=duckdb&logoColor=black" />
-  <img src="https://img.shields.io/badge/Three.js-0.183-000000?style=for-the-badge&logo=three.js&logoColor=white" />
-</p>
+# ClinicalSentinel ⚕️🔬
 
-<h1 align="center">🛡️ DataSentinel</h1>
-
-<p align="center">
-  <strong>AI-Powered Autonomous Data Quality & Anomaly Detection Platform</strong><br/>
-  A multi-agent, neuro-symbolic system that ingests any dataset, detects anomalies, vaults PII,<br/>
-  cleans data intelligently, and lets you query it using natural language — all in one cinematic pipeline.
-</p>
-
-<p align="center">
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-features">Features</a> •
-  <a href="#%EF%B8%8F-system-architecture">Architecture</a> •
-  <a href="#-data-pipeline-flow">Pipeline</a> •
-  <a href="#-project-structure">Structure</a> •
-  <a href="#-api-reference">API Reference</a> •
-  <a href="#-tech-stack">Tech Stack</a> •
-  <a href="#-security-model">Security</a> •
-  <a href="#-environment-variables">Environment</a>
-</p>
+ClinicalSentinel is an advanced, production-ready, patentable forensic audit platform specifically designed for clinical trials and EDC (Electronic Data Capture) systems. It utilizes a highly sophisticated 7-layer anomaly detection pipeline to uncover subtle data fabrication, temporal manipulation, cohort drift, and collusion networks, providing out-of-the-box 21 CFR Part 11 compliant audit reports.
 
 ---
 
-## ✨ Features
+## 🚀 The 7-Layer Forensic Intelligence Architecture
 
-| Category | Feature | Description |
-|----------|---------|-------------|
-| 🔍 **Godmode Detection** | IF + SHAP + LSTM | Statistical anomaly detection coupled with sequential pattern learning, per-row explainability, and threat scoring |
-| 🛡️ **Drift & Counterfactuals**| KS-Test & DiCE | Real-time dataset drift detection and counterfactual recommendations on how to remediate anomalies |
-| 🧠 **Neuro-Symbolic AI** | Logic Gate Engine | Groq LLM generates domain-specific mathematical validation rules compiled into Polars expressions |
-| 🛡️ **Privacy** | PII Scanner & Vault | Local-edge regex + heuristic PII detection with GDPR-compliant SHA-256 pseudonymisation |
-| ⚡ **LLM Acceleration** | Groq LPU (Llama 3.3) | Millisecond-latency AI inference for SQL generation, narrative insights, and rule synthesis |
-| 💬 **Natural Language Query** | Agentic RAG Chat | Ask questions in plain English — the agent generates SQL, executes it via DuckDB, and self-heals |
-| 🧹 **Smart Cleaning** | Multi-Strategy Engine | Drop, quarantine, winsorize, mask, or KNN-impute anomalies with before/after dataset comparison |
-| 📊 **Visual Analytics** | Interactive Dashboards| Correlation heatmaps, distribution histograms, scatter plots, and categorical breakdowns powered by Recharts |
-| 📋 **Quality Reports** | Exportable Scorecards| AI-generated data quality reports with health scores, missing data maps, and column profiling |
-| 🔌 **Live DB Connect** | PostgreSQL Bridge | Connect to production databases for real-time querying without data movement |
-| 🚀 **High Throughput** | In-Memory Streaming | Optimized streaming responses (`io.BytesIO`) for heavy dataset exports to prevent I/O bottlenecks |
-| 🔒 **Audit Trail** | SOC2-Ready Logging | Immutable JSONL audit trail of every AI-driven data mutation for compliance |
-| 🎬 **Cinematic UI** | Premium Experience | GSAP scroll-driven animations, Three.js particle simulations, Lenis smooth scrolling |
+ClinicalSentinel extends beyond traditional range-checks by implementing seven specialized modules designed to detect multi-dimensional fraud patterns:
+
+*   **F1: X-FRI (Explainable Fabrication Risk Index)**
+    *   Decomposes the overall Fabrication Risk Index (FRI) using SHAP values. Understand *why* an investigator was flagged and what specific metrics (e.g., Blood Pressure, Heart Rate) drove the anomaly score.
+*   **F2: GNN-Collusion Detector**
+    *   Graph Neural Network (GNN) based approach to identify collusion rings. Analyzes shared attributes (e.g., shared Site ID, CRO) to map out networks of suspicious investigators who may be coordinating fraudulent data entry.
+*   **F3: WearableGate (Authentication)**
+    *   Validates high-frequency biometric data (e.g., from wearables or continuous monitors) for biologically plausible noise and physical consistency, ensuring the data wasn't synthetically generated.
+*   **F4: RegRAG (Regulatory Compliance Auto-Checker)**
+    *   A Retrieval-Augmented Generation (RAG) engine powered by Groq and ChromaDB. It cross-references detected anomalies against statutory documents (FDA 21 CFR Part 11, ICH E6(R3), DPDP Act) and generates legal compliance verdicts.
+*   **F5: CohortDrift**
+    *   Identifies when a specific cohort (e.g., patients at a specific site) begins to drift statistically from the study-wide baseline or established historical norms, signaling potential systemic manipulation.
+*   **F6: SynthAudit (Synthetic Reference Baselines)**
+    *   Uses SDV (Synthetic Data Vault) to generate a statistically perfect "clean" baseline from trusted historical clinical data. Investigator data is then audited against this synthetic baseline to detect deviations.
+*   **F7: InvestiProfile (Longitudinal Behavioral Profiling)**
+    *   Builds behavioral profiles for individual investigators over time, identifying sudden behavioral shifts like "Night Shift" data entries, "Speed Typing" (impossible entry volumes), or "Weekend Warrior" patterns.
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Tech Stack
+
+*   **Backend:** FastAPI, Python, Polars (for high-performance data processing)
+*   **Frontend:** Next.js (React), Tailwind CSS, Framer Motion, Plotly
+*   **Machine Learning:** PyTorch (GNNs), scikit-learn, PyOD, SHAP, SDV
+*   **LLM Integration:** LangChain, Groq (LPU Inference), HuggingFace Embeddings, ChromaDB (Vector Store)
+*   **Report Generation:** fpdf2 (21 CFR Part 11 Compliant PDFs)
+
+---
+
+## ⚙️ Installation & Setup
 
 ### Prerequisites
+*   Node.js (v18+)
+*   Python (3.10+)
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| **Python** | 3.11+ | Backend runtime |
-| **Node.js** | 18+ | Frontend runtime |
-| **npm** | 9+ | Package management |
-| **Groq API Key** | — | LLM inference ([Get one free →](https://console.groq.com)) |
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/GhoshChinmay/DataSentinel.git
-cd DataSentinel
-```
-
-### 2. Backend Setup
-
+### 1. Backend Setup
 ```bash
 cd backend
-
-# Create and activate a virtual environment
 python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS / Linux
-source venv/bin/activate
-
-# Install all dependencies
+# Windows: venv\Scripts\activate
+# Mac/Linux: source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment Variables
-
-Create a `.env` file inside the `backend/` directory:
-
-```env
-# ━━━ REQUIRED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GROQ_API_KEY=gsk_your_key_here
-
-# ━━━ OPTIONAL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Protect API endpoints with a key (enables auth guard)
-# DS_API_KEY=your_secure_api_key
-
-# Custom salt for PII pseudonymisation (defaults to built-in)
-# DS_PII_SALT=your_custom_salt
-
-# CORS whitelist (defaults to localhost:3000)
-# CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+**Environment Variables (`backend/.env`):**
+```ini
+DS_API_KEY=your_secure_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
-### 4. Start the Backend
-
+**Run Backend:**
 ```bash
 uvicorn main:app --reload
 ```
+*API will run on `http://127.0.0.1:8000`*
 
-The API server starts at **http://localhost:8000**:
-
-| URL | Description |
-|-----|-------------|
-| `http://localhost:8000/` | Health check — `{"status": "DataSentinel detection engine is online."}` |
-| `http://localhost:8000/docs` | Interactive Swagger API documentation |
-| `http://localhost:8000/redoc` | ReDoc API documentation |
-
-### 5. Frontend Setup
-
-Open a **new terminal**:
-
+### 2. Frontend Setup
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
 ```
 
-### 6. Start the Frontend
+**Environment Variables (`frontend/.env.local`):**
+```ini
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_API_KEY=your_secure_api_key_here
+```
 
+**Run Frontend:**
 ```bash
-npm run dev
+npx next dev
 ```
-
-The application opens at **http://localhost:3000**.
-
----
-
-## 🏗️ System Architecture
-
-<p align="center">
-  <img src="frontend/public/architecture.png" alt="DataSentinel System Architecture" width="100%" />
-</p>
-
-### Architecture Overview
-
-DataSentinel uses a **decoupled client-server architecture** with a multi-engine backend design:
-
-```mermaid
-graph TD
-    %% Browser Layer
-    subgraph Browser["BROWSER — Next.js 16 + React 19"]
-        direction LR
-        L["3D Landing
-Three.js"]
-        D["Detection
-Dashboard"]
-        I["Insights
-Panel"]
-        C["Cleaning
-Compare"]
-        Q["NL Query
-(SSE Chat)"]
-    end
-
-    %% API Layer
-    Axios["Axios API Service + Auth Interceptor"]
-    Browser --> Axios
-    
-    %% Backend Layer
-    subgraph Backend["FastAPI Backend (Python 3.11+)"]
-        Gateway["API Gateway: Rate Limiting · Auth Guard · CORS"]
-        
-        subgraph Engines["AI & Processing Engines"]
-            direction LR
-            PII["PII Scanner
-Regex+SHA256"]
-            Det["Detection
-IF+LSTM+SHAP"]
-            Log["Logic Gate
-Neuro-Symbolic"]
-            Drift["Drift & DiCE
-KS-Test+Counterfactuals"]
-            Clean["Cleaning
-Polars"]
-            Query["Query
-DuckDB+Groq"]
-            Vis["Visualization
-Engine"]
-        end
-        
-        Gateway --> PII
-        Gateway --> Det
-        Gateway --> Log
-        Gateway --> Drift
-        Gateway --> Clean
-        Gateway --> Query
-        Gateway --> Vis
-        
-        GroqClient["Groq Client: LLM wrapper with retry"]
-        Schema["Schema Enforcer: Data contract validation"]
-        Dict["Business Dictionary: RAG knowledge base"]
-        
-        Engines --> GroqClient
-    end
-    
-    Axios -- "REST API / SSE" --> Gateway
-    
-    %% Storage Layer
-    subgraph Storage["Storage Layer"]
-        Session["💾 Session Storage
-Parquet files"]
-        Audit["📝 Audit Trail
-JSONL logs"]
-    end
-    
-    Backend --> Storage
-    
-    %% External
-    GroqCloud["☁️ Groq Cloud LPU
-Llama 3.3 70B"]
-    GroqClient -- "AI Inference" --> GroqCloud
-```
+*App will run on `http://localhost:3000`*
 
 ---
 
-## 🔄 Data Pipeline Flow
+## ⚖️ Compliance
 
-The platform processes data through a **7-stage sequential pipeline**:
-
-```mermaid
-flowchart LR
-    1["1. UPLOAD\nCSV/JSON/Excel"] --> 2["2. PII VAULT\nSHA-256"]
-    2 --> 3["3. ANOMALY DETECTION\nIF+LSTM+SHAP"]
-    3 --> 4["4. AI INSIGHTS\nStats+LLM"]
-    4 --> 5["5. SMART CLEANING\nDrop/Quarantine"]
-    5 --> 6["6. QUERY & EXPLORE\nNL → SQL"]
-    6 --> 7["7. EXPORT\nReport + Download"]
-```
-
-| Stage | Engine | What Happens |
-|-------|--------|--------------|
-| **1. Upload** | `main.py` + `schema.py` | File parsed (CSV/JSON/Excel) → Schema contract validation → Parquet storage |
-| **2. PII Vault** | `pii_scanner.py` | Regex + heuristic scan for emails, phones, SSNs → Optional SHA-256 pseudonymisation |
-| **3. Detection** | `detection.py` + `logic_gate.py` + `nlp_bridge.py` | NLP feature engineering → Neuro-symbolic rule generation → Isolation Forest → SHAP explainability → Threat scoring |
-| **4. AI Insights** | `insights.py` + `groq_client.py` | Statistical profiling (null rates, skewness, correlations) → Groq LLM narrative generation |
-| **5. Cleaning** | `cleaning.py` | Drop, quarantine, winsorize, mask, or KNN-impute anomalies → Save cleaned Parquet |
-| **6. Query** | `query.py` + DuckDB | Natural language → Groq generates SQL → DuckDB executes → Auto-correction retry loop |
-| **7. Export** | `quality.py` + `visualization.py` | Quality report generation → Chart data aggregation → CSV download |
+ClinicalSentinel is built with **FDA 21 CFR Part 11** and **ICH E6(R3)** compliance in mind.
+*   All PDF reports contain system-generated UTC timestamps.
+*   Scores are mathematically reproducible given the same dataset and seed variables.
+*   The system maintains strict isolation of user session datasets to ensure data integrity during analysis.
 
 ---
-
-## 📁 Project Structure
-
-```
-DataSentinel/
-├── backend/
-│   ├── main.py                  # FastAPI application & all route definitions
-│   ├── auth.py                  # API key authentication guard (constant-time comparison)
-│   ├── schema.py                # Data contract validation (SchemaEnforcer)
-│   ├── utils.py                 # Session management, logging, audit trail utilities
-│   ├── groq_client.py           # Centralized Groq LLM client with retry logic
-│   ├── engines/
-│   │   ├── __init__.py          # Re-exports all engine functions
-│   │   ├── detection.py         # Isolation Forest + SHAP anomaly detection pipeline
-│   │   ├── cleaning.py          # Multi-strategy anomaly cleaning (drop/quarantine/impute)
-│   │   ├── insights.py          # Statistical profiling + AI narrative generation
-│   │   ├── query.py             # Natural language → SQL via Groq + DuckDB execution
-│   │   ├── visualization.py     # Chart data aggregation (histograms, correlations)
-│   │   ├── quality.py           # Data quality report & health score generation
-│   │   ├── logic_gate.py        # AI-generated neuro-symbolic validation rules
-│   │   ├── nlp_bridge.py        # NLP feature engineering (TF-IDF + SVD) for text columns
-│   │   └── pii_scanner.py       # PII detection & SHA-256 pseudonymisation
-│   ├── data/
-│   │   ├── fraud_transactions.csv    # Sample: Financial fraud dataset
-│   │   ├── patient_vitals.csv        # Sample: Healthcare vitals dataset
-│   │   ├── ecommerce_reviews.csv     # Sample: E-commerce reviews dataset
-│   │   ├── business_dictionary.json  # Persistent RAG knowledge base
-│   │   └── schemas/                  # Data contract schema definitions
-│   ├── tests/
-│   │   ├── conftest.py          # Pytest fixtures & shared test setup
-│   │   ├── test_api.py          # API endpoint integration tests
-│   │   ├── test_cleaning.py     # Cleaning engine unit tests
-│   │   ├── test_detection.py    # Detection engine unit tests
-│   │   ├── test_insights.py     # Insights engine unit tests
-│   │   ├── test_query.py        # Query engine unit tests
-│   │   └── test_schema.py       # Schema enforcer unit tests
-│   ├── requirements.txt         # Python dependencies
-│   └── .env                     # Environment variables (not committed)
-│
-├── frontend/
-│   ├── public/
-│   │   └── architecture.png     # System architecture diagram
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── page.tsx         # Main application page & pipeline orchestrator
-│   │   │   ├── layout.tsx       # Root layout with SmoothScroller
-│   │   │   └── globals.css      # Global styles & Tailwind configuration
-│   │   ├── components/
-│   │   │   ├── landing/
-│   │   │   │   ├── HeroLanding.tsx        # GSAP scroll-driven cinematic intro
-│   │   │   │   ├── PurificationCore.tsx   # Three.js data purification particle animation
-│   │   │   │   ├── NeuralCore.tsx         # Three.js neural network background
-│   │   │   │   └── AmbientAurora.tsx      # CSS ambient aurora backdrop
-│   │   │   ├── detection/       # Anomaly detection results with SHAP visualizations
-│   │   │   ├── insights/        # AI-generated insights dashboard with profiles
-│   │   │   ├── clean/           # Multi-strategy cleaning action panel
-│   │   │   ├── compare/         # Before/after dataset diff comparison
-│   │   │   ├── review-edit/     # Data review & inline edit interface
-│   │   │   ├── visualizer/      # Charts (histograms, heatmaps, scatter plots)
-│   │   │   ├── query/           # Natural language query chat interface (SSE)
-│   │   │   ├── export-report/   # Quality report export panel
-│   │   │   ├── pii-modal/       # PII detection & pseudonymisation modal
-│   │   │   └── SmoothScroller.tsx  # Lenis smooth scroll wrapper
-│   │   ├── hooks/
-│   │   │   ├── use-detection.ts # Anomaly data fetching & feedback state
-│   │   │   ├── use-compare.ts   # Before/after comparison data hook
-│   │   │   └── use-viz.ts       # Visualization data & tab state hook
-│   │   ├── services/
-│   │   │   └── api.service.ts   # Axios instance with auth interceptor
-│   │   ├── types/
-│   │   │   └── api.ts           # Shared TypeScript interfaces (zero `any` types)
-│   │   └── constants/
-│   │       └── config.ts        # API base URL & key configuration
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── next.config.ts
-│   ├── eslint.config.mjs
-│   └── postcss.config.mjs
-│
-├── .gitignore
-└── README.md
-```
-
----
-
-## 📡 API Reference
-
-All endpoints are served at `http://localhost:8000`. Interactive Swagger docs at `/docs`.
-
-### Core Data Pipeline
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Health check — returns engine status |
-| `GET` | `/api/health` | Verify Groq API connectivity & model availability |
-| `POST` | `/api/upload/` | Upload a dataset (CSV, JSON, Excel, Parquet) with schema validation |
-| `GET` | `/api/data/{session_id}` | Fetch dataset rows with filtering (`is_cleaned`, `only_anomalies`) |
-| `POST` | `/api/clean/{session_id}` | Clean anomalies — actions: `drop`, `quarantine`, `winsorize`, `mask`, `impute` |
-| `GET` | `/api/compare/{session_id}` | Compare raw vs cleaned data side-by-side |
-| `GET` | `/api/viz/{session_id}` | Get visualization aggregations (histograms, correlations, categorical) |
-| `GET` | `/api/insights/{session_id}` | Generate AI insights with statistical profiles & LLM narratives |
-| `GET` | `/api/report/{session_id}` | Generate exportable quality report with health score |
-| `GET` | `/api/download/{session_id}` | Download cleaned dataset as CSV |
-
-### Agentic Query System
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/query/{session_id}` | Natural language query — streams results via SSE (modes: `explore` / `edit`) |
-| `POST` | `/api/confirm-edit/{session_id}` | Execute a confirmed SQL mutation with audit logging |
-
-### Privacy & Security
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/pii-scan/{session_id}` | Scan uploaded data for PII (emails, phones, SSNs, addresses) |
-| `POST` | `/api/pseudonymise/{session_id}` | SHA-256 pseudonymise selected PII columns |
-| `GET` | `/api/quarantine/{session_id}` | View quarantined anomaly rows |
-| `POST` | `/api/feedback/` | Submit human feedback on anomaly classifications |
-
-### Knowledge & Administration
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/knowledge/learn` | Teach the AI a business term with SQL logic & keywords |
-| `POST` | `/api/connect-db/{session_id}` | Connect a live PostgreSQL database for real-time querying |
-| `GET` | `/api/admin/audit-logs` | Fetch the immutable audit trail of all AI data mutations |
-
-### Sample Datasets
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/samples` | List available built-in sample datasets |
-| `POST` | `/api/load-sample/{filename}` | Load a sample dataset through the full detection pipeline |
-
----
-
-## 🔧 Tech Stack
-
-### Backend
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| **FastAPI** | 0.115 | Async REST API framework with auto-generated docs |
-| **Polars** | 1.27 | High-performance DataFrame engine (10-100x faster than Pandas) |
-| **scikit-learn** | 1.6 | Isolation Forest anomaly detection algorithm |
-| **SHAP** | 0.46 | Model-agnostic explainability (per-row feature attribution) |
-| **DuckDB** | 1.2 | In-process analytical SQL engine for natural language queries |
-| **Groq SDK** | latest | LLM inference client (Llama 3.3 70B on Groq LPU hardware) |
-| **SlowAPI** | 0.1.9 | Rate limiting middleware for API protection |
-| **Pandas** | 2.2 | Excel/fallback CSV parsing & compatibility layer |
-
-### Frontend
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| **Next.js** | 16 | React framework with App Router & SSR |
-| **React** | 19 | UI component library |
-| **Three.js** | 0.183 | 3D particle visualization (PurificationCore, NeuralCore) |
-| **@react-three/fiber** | 9.6 | React renderer for Three.js scenes |
-| **GSAP** | 3.15 | Scroll-driven cinematic animations |
-| **Lenis** | 1.3 | Butter-smooth scroll engine |
-| **Framer Motion** | 12 | Page transitions & micro-animations |
-| **Recharts** | 3.8 | Data visualization charts (bar, scatter, heatmap) |
-| **Tailwind CSS** | 4 | Utility-first CSS framework |
-| **Axios** | 1.14 | HTTP client with interceptors |
-
----
-
-## 🔐 Security Model
-
-DataSentinel implements a **defense-in-depth** security architecture:
-
-| Layer | Implementation |
-|-------|---------------|
-| **API Authentication** | Optional API key guard with constant-time comparison (`DS_API_KEY`) |
-| **PII Protection** | Local-edge scanning — PII is detected and vaulted before any data reaches the LLM |
-| **Pseudonymisation** | Salted SHA-256 hashing preserves data relationships while protecting identities |
-| **Path Traversal Prevention** | UUID-based session isolation — all file paths are validated against session boundaries |
-| **SQL Injection Protection** | DuckDB read-only mode for explore queries, whitelist-based mutation validation |
-| **File Upload Safety** | File size caps (50MB), extension whitelist, MIME type validation |
-| **Rate Limiting** | SlowAPI middleware prevents abuse (configurable per-endpoint limits) |
-| **Audit Trail** | Immutable JSONL log of every data mutation for SOC2/compliance readiness |
-| **CORS** | Configurable origin whitelist (defaults to `localhost:3000`) |
-
-> **Opt-in Auth Model:** If `DS_API_KEY` is not set, authentication is bypassed for frictionless local development. Set the key in production to enable the auth guard.
-
----
-
-## 🔑 Environment Variables
-
-### Backend (`backend/.env`)
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `GROQ_API_KEY` | ✅ **Yes** | — | Your Groq Cloud API key ([get one free](https://console.groq.com)) |
-| `DS_API_KEY` | No | — | API key to protect endpoints. Enables auth guard when set |
-| `DS_PII_SALT` | No | Built-in default | Cryptographic salt for PII SHA-256 hashing |
-| `CORS_ORIGINS` | No | `http://localhost:3000` | Comma-separated allowed CORS origins |
-
-### Frontend (`frontend/.env.local`)
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | No | `http://127.0.0.1:8000` | Backend API base URL |
-| `NEXT_PUBLIC_API_KEY` | No | — | Must match `DS_API_KEY` if auth is enabled on backend |
-
----
-
-## 🧪 Running Tests
-
-### Backend
-
-```bash
-cd backend
-source venv/bin/activate   # or venv\Scripts\activate on Windows
-pytest -v
-```
-
-### Frontend
-
-```bash
-cd frontend
-
-# TypeScript type checking (zero errors expected)
-npx tsc --noEmit
-
-# ESLint linting (zero errors expected)
-npx eslint src/
-```
-
----
-
-## 🗒️ Usage Guide
-
-1. **Open** the app at `http://localhost:3000`
-2. **Scroll** through the cinematic 3D landing page
-3. **Upload** your CSV, JSON, or Excel file — or try a built-in sample dataset
-4. **PII Vault** — If personal data is detected, choose columns to pseudonymise before proceeding
-5. **Review** detected anomalies with AI-generated explanations, SHAP attributions, and threat scores
-6. **Explore** AI-generated insights — statistical profiles, null maps, correlations, and narrative summaries
-7. **Clean** the dataset by choosing a strategy: drop, quarantine, winsorize, mask, or impute
-8. **Compare** the raw vs cleaned data side-by-side to verify cleaning quality
-9. **Edit** data using the review panel for manual corrections
-10. **Visualize** distributions, correlation heatmaps, and categorical breakdowns
-11. **Query** your data using natural language (e.g., *"Show me all transactions above $10,000"*)
-12. **Teach** the AI new business terms for better query understanding
-13. **Export** a quality report and download the cleaned CSV
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📜 License
-
-This project is for educational and portfolio purposes.
-
----
-
-<p align="center">
-  Built with ❤️ using <strong>FastAPI</strong>, <strong>Next.js</strong>, <strong>Groq</strong>, and <strong>Three.js</strong>
-</p>
+*Developed by GhoshChinmay.*

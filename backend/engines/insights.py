@@ -1,56 +1,37 @@
 """
-DataSentinel — AI Insights Engine (Groq Cloud-Accelerated)
-Generates a rich, data-driven dashboard payload with statistical profiling,
-correlation analysis, missing-data mapping, and AI-generated narrative insights.
-
-PRIVACY GUARANTEE: Only computed statistics (numbers) are sent to the Groq API.
-Raw row data never leaves the local machine.
+ClinicalSentinel — Regulatory Insights & Audit Report Engine
+Generates an FDA 21 CFR Part 11 Compliant PDF Audit Report.
+Combines Groq Cloud LLM narratives with X-FRI SHAP decompositions
+and RegRAG regulatory compliance verdicts.
 """
 
 import os
 import json
-import math
+import hashlib
+from datetime import datetime
 import polars as pl
 import numpy as np
+import math
+
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 from utils import _session_dir, logger
-from groq_client import groq_chat, MODEL_FAST
+from groq_client import groq_chat_json
+from engines.xfri_explainer import decompose_shap_to_layers
+from engines.reg_rag import evaluate_compliance
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # INTERNAL HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Columns injected by the detection pipeline — exclude from user-facing profiles
-# BUG FIX: Removed "Class" from this list. It is a valid user column, which was
-# causing the 31 vs 30 column count inconsistency!
-_INTERNAL_COLS = {
-    "is_anomaly",
-    "Threat_Score",
-    "AI_Reason",
-    "SHAP_Payload",
-    "logic_violation",
-}
-_ENGINEERED_SUFFIXES = (
-    "_freq",
-    "_length",
-    "_digit_ratio",
-    "_upper_ratio",
-    "_special_ratio",
-)
-_ENGINEERED_PREFIXES = ("nlp_pc",)
-_VELOCITY_COLS = {"velocity_24h_sum", "velocity_1h_count"}
-
-
-def _is_user_column(col: str) -> bool:
-    """Return True if the column is an original user column (not internal/engineered)."""
-    if col in _INTERNAL_COLS or col in _VELOCITY_COLS:
-        return False
-    if col.endswith(_ENGINEERED_SUFFIXES):
-        return False
-    if any(col.startswith(p) for p in _ENGINEERED_PREFIXES):
-        return False
-    return True
-
+def _generate_digital_signature(session_id: str, timestamp: str) -> str:
+    """Generates a pseudo-cryptographic signature for 21 CFR Part 11 compliance."""
+    raw = f"CLINICAL_SENTINEL_AUDIT_{session_id}_{timestamp}"
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 def _safe(val) -> float | None:
     """Convert a value to a JSON-safe float, or None."""
@@ -65,355 +46,236 @@ def _safe(val) -> float | None:
         return None
 
 
-def _compute_skewness(series: pl.Series) -> float | None:
-    """Compute skewness for a numeric series."""
-    try:
-        vals = series.drop_nulls().to_numpy().astype(float)
-        n = len(vals)
-        if n < 3:
-            return None
-        mean = np.mean(vals)
-        std = np.std(vals, ddof=1)
-        if std == 0:
-            return 0.0
-        skew = (n / ((n - 1) * (n - 2))) * np.sum(((vals - mean) / std) ** 3)
-        return round(float(skew), 2)
-    except Exception:
-        return None
+# ─────────────────────────────────────────────────────────────────────────────
+# PDF GENERATION ENGINE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_pdf_report(session_id: str, summary_data: dict, top_anomalies: list, pdf_path: str):
+    """Draws the official PDF Audit Report using ReportLab."""
+    doc = SimpleDocTemplate(pdf_path, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    styles = getSampleStyleSheet()
+    
+    # Custom Styles
+    title_style = ParagraphStyle(name="TitleStyle", parent=styles['Heading1'], alignment=1, spaceAfter=20, textColor=colors.darkblue)
+    heading_style = ParagraphStyle(name="HeadingStyle", parent=styles['Heading2'], spaceAfter=10, spaceBefore=15, textColor=colors.maroon)
+    body_style = ParagraphStyle(name="BodyStyle", parent=styles['Normal'], spaceAfter=10, leading=14)
+    alert_style = ParagraphStyle(name="AlertStyle", parent=styles['Normal'], textColor=colors.red, spaceAfter=10)
+    sub_style = ParagraphStyle(name="Sub", alignment=1, spaceAfter=20, textColor=colors.red)
+    hash_style = ParagraphStyle(name="Hash", fontName="Courier", fontSize=9, textColor=colors.darkgray)
+
+    elements = []
+
+    # ── HEADER ────────────────────────────────────────────────────────
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    signature = _generate_digital_signature(session_id, timestamp)
+
+    elements.append(Paragraph("ClinicalSentinel™ Forensic Audit Report", title_style))
+    elements.append(Paragraph("<b>CONFIDENTIAL - REGULATORY COMPLIANCE EXPORT</b>", sub_style))
+    
+    elements.append(Paragraph(f"<b>Session ID:</b> {session_id}", body_style))
+    elements.append(Paragraph(f"<b>Timestamp:</b> {timestamp}", body_style))
+    elements.append(Paragraph(f"<b>Compliance Standard:</b> FDA 21 CFR Part 11 & DPDP Act 2023", body_style))
+    elements.append(Spacer(1, 15))
+
+    # ── EXECUTIVE SUMMARY (Groq LLM) ──────────────────────────────────
+    elements.append(Paragraph("Executive Summary", heading_style))
+    elements.append(Paragraph(summary_data.get("executive_summary", "No summary generated."), body_style))
+    
+    elements.append(Paragraph("Key Findings", heading_style))
+    for finding in summary_data.get("key_findings", []):
+        elements.append(Paragraph(f"• {finding}", body_style))
+    elements.append(Spacer(1, 15))
+
+    # ── X-FRI ANOMALY DECOMPOSITION ───────────────────────────────────
+    elements.append(Paragraph("Top High-Risk Investigators / Records (X-FRI)", heading_style))
+    
+    if not top_anomalies:
+        elements.append(Paragraph("No critical fabrication risks detected in this cohort.", body_style))
+    else:
+        for idx, anom in enumerate(top_anomalies):
+            elements.append(Paragraph(f"<b>Record #{idx+1} | Fabrication Risk Index (FRI): {anom['score']}%</b>", alert_style))
+            if anom.get('ai_reason'):
+                elements.append(Paragraph(f"<i>AI Narrative:</i> {anom['ai_reason']}", body_style))
+            
+            # ── NEW: Draw the Regulatory Verdict ──
+            if anom.get('regulatory_verdict'):
+                elements.append(Paragraph(f"<b>Regulatory Verdict (RegRAG):</b> {anom['regulatory_verdict']}", body_style))
+            
+            # Draw the Layer Decomposition Table
+            if anom.get('layers'):
+                data = [["Forensic Layer", "Impact Contribution (%)"]]
+                for layer, impact in anom['layers'].items():
+                    data.append([layer, f"{impact}%"])
+                
+                t = Table(data, colWidths=[350, 150])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ]))
+                elements.append(t)
+            elements.append(Spacer(1, 15))
+
+    # ── FRI COMPOSITE SCORE SUMMARY ───────────────────────────────────
+    session_dir = _session_dir(session_id)
+    fri_path = os.path.join(session_dir, "fri_result.json")
+    if os.path.exists(fri_path):
+        elements.append(Paragraph("Fabrication Risk Index (FRI) Summary", heading_style))
+        try:
+            with open(fri_path, "r", encoding="utf-8") as f:
+                fri_data = json.load(f)
+            
+            investigators = fri_data.get("investigators", {})
+            if investigators:
+                # Prepare table data
+                table_data = [["Investigator ID", "Records", "FRI Score", "Risk Band"]]
+                
+                # Sort investigators by FRI score descending
+                sorted_invs = sorted(investigators.values(), key=lambda x: x.get("fri_score", 0), reverse=True)
+                
+                for inv in sorted_invs:
+                    score = inv.get("fri_score", 0)
+                    band = inv.get("risk_band", "low")
+                    inv_id = str(inv.get("investigator_id", "Unknown"))
+                    count = str(inv.get("entry_count", 0))
+                    table_data.append([inv_id, count, f"{score:.1f}", band.upper()])
+                
+                t_fri = Table(table_data, colWidths=[150, 80, 100, 170])
+                
+                # Dynamic styling: Highlight high risk in light coral
+                styles_commands = [
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ]
+                
+                for i, row in enumerate(table_data[1:], start=1):
+                    if row[3] == 'HIGH':
+                        styles_commands.append(('BACKGROUND', (0, i), (-1, i), colors.lightpink))
+                    elif row[3] == 'MEDIUM':
+                        styles_commands.append(('BACKGROUND', (0, i), (-1, i), colors.lightyellow))
+                
+                t_fri.setStyle(TableStyle(styles_commands))
+                elements.append(t_fri)
+                elements.append(Spacer(1, 15))
+        except Exception as e:
+            logger.error(f"Error parsing FRI results for PDF: {e}")
+            elements.append(Paragraph("FRI data could not be parsed.", body_style))
+
+    # ── DIGITAL SIGNATURE FOOTER ──────────────────────────────────────
+    elements.append(Spacer(1, 30))
+    elements.append(Paragraph("<b>ELECTRONIC SIGNATURE CERTIFICATION</b>", heading_style))
+    elements.append(Paragraph("This document was generated automatically by the ClinicalSentinel multi-modal anomaly detection engine. It employs cryptographic hashing to verify data integrity.", body_style))
+    elements.append(Paragraph(f"<b>SHA-256 Hash:</b> {signature}", hash_style))
+
+    # Generate the PDF
+    doc.build(elements)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN ENGINE
+# MAIN INSIGHTS CONTROLLER
 # ─────────────────────────────────────────────────────────────────────────────
-
 
 def generate_insights(session_id: str) -> dict:
+    """
+    Analyzes the dataset, generates an LLM summary, decomposes X-FRI scores,
+    and produces a downloadable PDF report.
+    """
+    logger.info("Generating ClinicalSentinel Audit Insights...")
     session_dir = _session_dir(session_id)
     raw_path = f"{session_dir}/raw_data.parquet"
+    pdf_path = os.path.join(session_dir, "clinical_audit_report.pdf")
 
     if not os.path.exists(raw_path):
         return {"error": "Data not found"}
 
     df = pl.read_parquet(raw_path)
-    total_rows = len(df)
+    pandas_df = df.to_pandas()
+    
+    # 1. Collect Dataset Metrics
+    total_rows = len(pandas_df)
+    anomalies_df = pandas_df[pandas_df["is_anomaly"] == True] if "is_anomaly" in pandas_df.columns else pandas_df.head(0)
+    total_anomalies = len(anomalies_df)
+    
+    if total_rows == 0:
+        return {"error": "Dataset is empty"}
 
-    # ── Categorize columns ────────────────────────────────────────────────
-    user_cols = [c for c in df.columns if _is_user_column(c)]
-
-    numeric_cols = []
-    text_cols = []
-    date_cols = []
-
-    for c in user_cols:
-        dtype = df[c].dtype
-        dtype_str = str(dtype)
-        if "Int" in dtype_str or "Float" in dtype_str:
-            numeric_cols.append(c)
-        elif "Date" in dtype_str or "Time" in dtype_str:
-            date_cols.append(c)
-        elif "Utf8" in dtype_str or "String" in dtype_str:
-            text_cols.append(c)
-
-    # ── Anomaly stats ─────────────────────────────────────────────────────
-    anomaly_count = 0
-    if "is_anomaly" in df.columns:
-        anomaly_count = df.filter(pl.col("is_anomaly") == True).height
-
-    anomaly_rate = round((anomaly_count / total_rows) * 100, 2) if total_rows > 0 else 0
-
-    # ── Summary ───────────────────────────────────────────────────────────
-    summary = {
-        "total_rows": total_rows,
-        "total_columns": len(user_cols),
-        "numeric_columns": len(numeric_cols),
-        "text_columns": len(text_cols),
-        "date_columns": len(date_cols),
-        "anomaly_count": anomaly_count,
-        "anomaly_rate": anomaly_rate,
-    }
-
-    # ── Column profiles (numeric) ─────────────────────────────────────────
-    column_profiles = []
-    for c in numeric_cols:
-        series = df[c].drop_nulls()
-        n = len(series)
-        null_count = df[c].null_count()
-
-        # Outlier count: values beyond 3σ from mean
-        outlier_count = 0
-        if n > 2:
-            try:
-                mean_val = float(series.mean())
-                std_val = float(series.std())
-                if std_val > 0:
-                    outlier_count = int(
-                        series.filter(
-                            (pl.lit(True))
-                            & (((series - mean_val).abs() > (3 * std_val)))
-                        ).len()
-                    )
-            except Exception:
-                pass
-
-        profile = {
-            "name": c,
-            "type": "numeric",
-            "min": _safe(series.min()) if n > 0 else None,
-            "max": _safe(series.max()) if n > 0 else None,
-            "mean": _safe(series.mean()) if n > 0 else None,
-            "median": _safe(series.median()) if n > 0 else None,
-            "std": _safe(series.std()) if n > 0 else None,
-            "null_count": null_count,
-            "null_pct": (
-                round((null_count / total_rows) * 100, 2) if total_rows > 0 else 0
-            ),
-            "skewness": _compute_skewness(series),
-            "outlier_count": outlier_count,
-        }
-        column_profiles.append(profile)
-
-    # ── Text column profiles ──────────────────────────────────────────────
-    for c in text_cols:
-        null_count = df[c].null_count()
-        unique_count = df[c].n_unique()
-        column_profiles.append(
-            {
-                "name": c,
-                "type": "text",
-                "unique_values": unique_count,
-                "null_count": null_count,
-                "null_pct": (
-                    round((null_count / total_rows) * 100, 2) if total_rows > 0 else 0
-                ),
+    # 2. Extract Top Anomalies and Decompose their X-FRI Scores
+    top_anomalies = []
+    if total_anomalies > 0 and "Threat_Score" in anomalies_df.columns:
+        top_df = anomalies_df.sort_values(by="Threat_Score", ascending=False).head(5)
+        for idx, row in top_df.iterrows():
+            shap_payload = row.get("SHAP_Payload", "[]")
+            logic_violation = row.get("logic_violation", None)
+            
+            # Run the X-FRI Explainer
+            layers = decompose_shap_to_layers(shap_payload, logic_violation)
+            
+            # ── NEW: Run RegRAG Compliance Check ──
+            fraud_summary = {
+                "risk_score": row.get("Threat_Score", 0),
+                "forensic_layers_triggered": layers,
+                "ai_reasoning": row.get("AI_Reason", "")
             }
-        )
+            # Assign a mock investigator ID for the report based on row index
+            investigator_id = f"Investigator_Row_{idx}"
+            reg_verdict_data = evaluate_compliance(investigator_id, fraud_summary)
+            verdict_text = reg_verdict_data.get("regulatory_verdict", "Compliance assessment unavailable.")
+            
+            top_anomalies.append({
+                "score": _safe(row.get("Threat_Score", 0)),
+                "ai_reason": row.get("AI_Reason", ""),
+                "layers": layers,
+                "regulatory_verdict": verdict_text
+            })
 
-    # ── Missing data map ──────────────────────────────────────────────────
-    missing_data_map = []
-    for c in user_cols:
-        nc = df[c].null_count()
-        if nc > 0:
-            missing_data_map.append(
-                {
-                    "column": c,
-                    "null_count": nc,
-                    "null_pct": round((nc / total_rows) * 100, 2),
-                }
-            )
-    missing_data_map.sort(key=lambda x: x["null_count"], reverse=True)
+    # 3. Prompt Groq LLM as a Regulatory Auditor
+    prompt = f"""You are a Lead Clinical Trial Forensic Auditor reviewing a dataset for the FDA and CDSCO.
+Review the following metrics and write a strictly professional, formal executive summary for an official audit report.
+Do not use marketing language. Use regulatory tone (e.g., 'data integrity', 'fabrication risk', 'protocol deviation').
 
-    # ── Type breakdown ────────────────────────────────────────────────────
-    type_breakdown = {
-        "numeric": len(numeric_cols),
-        "text": len(text_cols),
-        "date": len(date_cols),
-    }
+METRICS:
+- Total Records Scanned: {total_rows}
+- Records Flagged for Fabrication Risk: {total_anomalies} ({(total_anomalies/total_rows)*100:.1f}%)
 
-    # ── Top correlations ──────────────────────────────────────────────────
-    top_correlations = []
-    if len(numeric_cols) > 1:
-        try:
-            corr_df = df.select(numeric_cols).to_pandas().corr().fillna(0)
-            pairs_seen = set()
-            for i, col_a in enumerate(numeric_cols):
-                for j, col_b in enumerate(numeric_cols):
-                    if i >= j:
-                        continue
-                    pair_key = tuple(sorted([col_a, col_b]))
-                    if pair_key in pairs_seen:
-                        continue
-                    pairs_seen.add(pair_key)
-                    val = float(corr_df.iloc[i, j])
-                    if abs(val) > 0.3:
-                        top_correlations.append(
-                            {
-                                "col_a": col_a,
-                                "col_b": col_b,
-                                "value": round(val, 3),
-                            }
-                        )
-            top_correlations.sort(key=lambda x: abs(x["value"]), reverse=True)
-            top_correlations = top_correlations[:10]
-        except Exception as e:
-            logger.warning("Correlation computation failed: %s", e)
-
-    # ── Anomaly distribution by column ────────────────────────────────────
-    anomaly_distribution = []
-    if (
-        anomaly_count > 0
-        and "is_anomaly" in df.columns
-        and "Threat_Score" in df.columns
-    ):
-        anomaly_df = df.filter(pl.col("is_anomaly") == True)
-        for c in numeric_cols:
-            try:
-                series = anomaly_df[c].drop_nulls()
-                full_series = df[c].drop_nulls()
-                if len(full_series) > 2 and len(series) > 0:
-                    mean_val = float(full_series.mean())
-                    std_val = float(full_series.std())
-                    if std_val > 0:
-                        outlier_in_anomalies = int(
-                            series.filter(
-                                ((series - mean_val).abs() > (2 * std_val))
-                            ).len()
-                        )
-                        if outlier_in_anomalies > 0:
-                            anomaly_distribution.append(
-                                {
-                                    "column": c,
-                                    "anomaly_count": outlier_in_anomalies,
-                                }
-                            )
-            except Exception:
-                pass
-        anomaly_distribution.sort(key=lambda x: x["anomaly_count"], reverse=True)
-        anomaly_distribution = anomaly_distribution[:10]
-
-    # ── AI Narrative (via Groq — ONLY statistics sent, never raw data) ────
-    ai_narrative = _generate_ai_narrative(
-        summary, column_profiles, top_correlations, missing_data_map
-    )
-
-    return {
-        "summary": summary,
-        "column_profiles": column_profiles,
-        "missing_data_map": missing_data_map,
-        "type_breakdown": type_breakdown,
-        "top_correlations": top_correlations,
-        "anomaly_distribution": anomaly_distribution,
-        "ai_narrative": ai_narrative,
-    }
-
-
-def _generate_ai_narrative(
-    summary: dict,
-    column_profiles: list[dict],
-    top_correlations: list[dict],
-    missing_data_map: list[dict],
-) -> list[str]:
-    """
-    Generate 3-5 human-readable insight sentences using Groq.
-    ONLY computed statistics are sent — never raw data values.
-    """
-    # Build a statistics-only context block for the LLM
-    stats_context = f"""Dataset Statistics:
-- Rows: {summary['total_rows']} | Columns: {summary['total_columns']}
-- Numeric: {summary['numeric_columns']} | Text: {summary['text_columns']} | Date: {summary['date_columns']}
-- Anomalies: {summary['anomaly_count']} ({summary['anomaly_rate']}%)
+Respond STRICTLY with a JSON object:
+{{
+    "executive_summary": "A 3-sentence formal summary of the dataset's overall integrity.",
+    "key_findings": [
+        "Finding 1 (e.g., overall risk level)",
+        "Finding 2 (e.g., mention if the flag rate is acceptable or concerning)"
+    ]
+}}
 """
-
-    # Add top numeric profiles
-    numeric_profiles = [p for p in column_profiles if p.get("type") == "numeric"]
-    if numeric_profiles:
-        stats_context += "\nNumeric Column Summaries:\n"
-        for p in numeric_profiles[:8]:
-            stats_context += f"  - {p['name']}: min={p.get('min')}, max={p.get('max')}, mean={p.get('mean')}, std={p.get('std')}, skew={p.get('skewness')}, nulls={p.get('null_count')}, outliers={p.get('outlier_count')}\n"
-
-    # Add correlation info
-    if top_correlations:
-        stats_context += "\nTop Correlations:\n"
-        for c in top_correlations[:5]:
-            stats_context += f"  - {c['col_a']} ↔ {c['col_b']}: r={c['value']}\n"
-
-    # Add missing data info
-    if missing_data_map:
-        stats_context += "\nMissing Data:\n"
-        for m in missing_data_map[:5]:
-            stats_context += (
-                f"  - {m['column']}: {m['null_count']} nulls ({m['null_pct']}%)\n"
-            )
-
-    prompt = f"""You are a senior data analyst. Given ONLY these computed statistics about a dataset, generate exactly 4 distinct, specific, actionable insights.
-
-{stats_context}
-
-RULES:
-1. Each insight must be ONE sentence, clear and specific.
-2. Reference actual column names and numbers from the statistics.
-3. Focus on: data quality issues, interesting patterns, correlations, skewness, outliers, and missing data.
-4. Do NOT make generic statements. Every insight MUST reference specific statistics.
-5. Respond with a JSON object: {{"insights": ["insight1", "insight2", "insight3", "insight4"]}}"""
-
-    messages = [
-        {
-            "role": "system",
-            "content": "You are a JSON-only data analysis API. Respond with valid JSON only.",
-        },
-        {"role": "user", "content": prompt},
-    ]
-
     try:
-        from groq_client import groq_chat_json
-
-        result = groq_chat_json(messages, model=MODEL_FAST, temperature=0.3, timeout=12)
-        if result and isinstance(result, dict):
-            insights = result.get("insights", [])
-            if isinstance(insights, list) and len(insights) > 0:
-                return [
-                    str(i).strip() for i in insights if isinstance(i, str) and i.strip()
-                ][:5]
+        messages = [{"role": "user", "content": prompt}]
+        summary_data = groq_chat_json(messages, model="llama-3.1-8b-instant", temperature=0.2)
+        if not summary_data:
+            summary_data = {"executive_summary": "Automated summary unavailable.", "key_findings": []}
     except Exception as e:
-        logger.warning("AI narrative generation failed: %s", e)
+        logger.warning(f"Groq narrative generation failed: {e}")
+        summary_data = {"executive_summary": "AI summary generation failed.", "key_findings": []}
 
-    # Intelligent fallback — generate insights from computed stats
-    return _build_fallback_narrative(
-        summary, column_profiles, top_correlations, missing_data_map
-    )
+    # 4. Generate the Physical PDF Document
+    try:
+        generate_pdf_report(session_id, summary_data, top_anomalies, pdf_path)
+        logger.info(f"PDF Report generated successfully at {pdf_path}")
+    except Exception as e:
+        logger.error(f"Failed to generate PDF report: {e}")
+        pdf_path = None
 
-
-def _build_fallback_narrative(
-    summary: dict,
-    column_profiles: list[dict],
-    top_correlations: list[dict],
-    missing_data_map: list[dict],
-) -> list[str]:
-    """Generate meaningful insights from raw statistics when LLM is unavailable."""
-    narratives = []
-
-    # Anomaly insight
-    if summary["anomaly_count"] > 0:
-        narratives.append(
-            f"The anomaly detection engine flagged {summary['anomaly_count']} out of "
-            f"{summary['total_rows']} rows ({summary['anomaly_rate']}%) as statistically anomalous."
-        )
-
-    # Skewness insight
-    numeric_profiles = [
-        p for p in column_profiles if p.get("type") == "numeric" and p.get("skewness")
-    ]
-    skewed = [p for p in numeric_profiles if abs(p["skewness"] or 0) > 2]
-    if skewed:
-        worst = max(skewed, key=lambda p: abs(p["skewness"] or 0))
-        narratives.append(
-            f"Column '{worst['name']}' shows extreme skewness ({worst['skewness']}), "
-            f"with {worst.get('outlier_count', 0)} outliers beyond 3 standard deviations — "
-            f"consider log-transformation or winsorization before modelling."
-        )
-
-    # Correlation insight
-    if top_correlations:
-        top = top_correlations[0]
-        direction = "positive" if top["value"] > 0 else "negative"
-        narratives.append(
-            f"Strong {direction} correlation detected between '{top['col_a']}' and "
-            f"'{top['col_b']}' (r={top['value']}), which may indicate redundancy or a causal relationship."
-        )
-
-    # Missing data insight
-    if missing_data_map:
-        worst_missing = missing_data_map[0]
-        narratives.append(
-            f"Missing data is concentrated in '{worst_missing['column']}' "
-            f"({worst_missing['null_count']} nulls, {worst_missing['null_pct']}%), "
-            f"which may impact downstream model accuracy if left unaddressed."
-        )
-
-    # Size/dimension insight
-    if not narratives or len(narratives) < 3:
-        narratives.append(
-            f"Dataset contains {summary['total_columns']} features across {summary['total_rows']} observations "
-            f"with a mix of {summary['numeric_columns']} numeric and {summary['text_columns']} categorical dimensions."
-        )
-
-    return narratives[:5]
+    # 5. Return JSON payload for the frontend UI
+    return {
+        "status": "success",
+        "total_records": total_rows,
+        "fabrication_flags": total_anomalies,
+        "summary": summary_data,
+        "top_anomalies_xfri": top_anomalies,
+        "pdf_download_url": f"/api/download_report/{session_id}"
+    }

@@ -2,7 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, ShieldCheck, Trash2, Edit, BarChart, Brain, Terminal, AlertOctagon, ArrowRight, FileCheck, Zap, CheckCircle } from "lucide-react";
+import {
+  UploadCloud, ShieldCheck, Trash2, Edit, BarChart, Brain,
+  Terminal, AlertOctagon, ArrowRight, FileCheck, Zap, CheckCircle,
+  Microscope, Fingerprint, Scale, Activity
+} from "lucide-react";
 import { AxiosError } from "axios";
 import api from "@/services/api.service";
 import type { UploadResponse, InsightsDashboardResponse } from "@/types/api";
@@ -29,9 +33,11 @@ import Query from "@/components/query";
 import Compare from "@/components/compare";
 import ExportReport from "@/components/export-report";
 import PIIModal from "@/components/pii-modal";
+import FRIDashboard from "@/components/fri-dashboard/FRIDashboard"; // NEW: Forensic Audit Dashboard
 import type { PIIFinding } from "@/components/pii-modal/PIIModal";
 
-type PipelineStep = 'upload' | 'detect' | 'insights' | 'clean' | 'compare' | 'edit' | 'visualize' | 'query' | 'report';
+// NEW: Added 'forensic' to PipelineStep
+type PipelineStep = 'upload' | 'detect' | 'forensic' | 'insights' | 'clean' | 'compare' | 'edit' | 'visualize' | 'query' | 'report';
 
 // ── Custom High-Tech Loader Animation ──
 const QuantumLoader = () => (
@@ -55,6 +61,9 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState<PipelineStep>('upload');
   const [isUploading, setIsUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // NEW: State to hold columns for the FRI Dashboard mapping tool
+  const [columns, setColumns] = useState<string[]>([]);
 
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadedBytes, setUploadedBytes] = useState<{ loaded: number, total: number } | null>(null);
@@ -86,7 +95,7 @@ export default function Home() {
       { text: "Allocating secure memory buffers...", delay: 800 },
       { text: "Ingesting dataset via Polars engine...", delay: 2500 },
       { text: "Cryptographically vaulting PII signatures...", delay: 2000 },
-      { text: "Running Isolation Forest anomaly detection...", delay: 3500 },
+      { text: "Running 7-Layer Forensic anomaly detection...", delay: 3500 }, // Updated text
       { text: "Compiling neuro-symbolic logic gates...", delay: 1500 },
       { text: "PIPELINE_COMPLETE", delay: 0 }
     ];
@@ -120,8 +129,17 @@ export default function Home() {
 
   const checkPiiAndProceed = async (sid: string) => {
     try {
+      // Fetch columns so the FRIDashboard knows what to map
+      const dataRes = await api.get(`/api/data/${sid}?limit=1`);
+      if (dataRes.data?.data?.[0]) {
+        setColumns(Object.keys(dataRes.data.data[0]));
+      }
+
       const piiRes = await api.get(`/api/pii-scan/${sid}`);
-      if (piiRes.data.pii_detected) { setPiiFindings(piiRes.data.findings); setShowPIIModal(true); }
+      if (piiRes.data.pii_detected) {
+        setPiiFindings(piiRes.data.findings);
+        setShowPIIModal(true);
+      }
       else { setCurrentStep('detect'); }
     } catch {
       setCurrentStep('detect');
@@ -198,6 +216,7 @@ export default function Home() {
     if (currentStep === 'upload') return null;
     const steps = [
       { id: 'detect', icon: <ShieldCheck size={16} />, label: 'Detection' },
+      { id: 'forensic', icon: <Microscope size={16} />, label: 'Forensic Audit' }, // NEW TAB
       { id: 'insights', icon: <Brain size={16} />, label: 'Insights' },
       { id: 'clean', icon: <Trash2 size={16} />, label: 'Cleaning' },
       { id: 'compare', icon: <ArrowRight size={16} />, label: 'Compare' },
@@ -233,7 +252,7 @@ export default function Home() {
             exit={{ opacity: 0 }}
             className="fixed top-0 left-0 w-full p-6 z-50 flex justify-between items-center mix-blend-difference pointer-events-none"
           >
-            <div className="text-xl font-black tracking-tighter">DATA<span className="text-purple-500">SENTINEL</span></div>
+            <div className="text-xl font-black tracking-tighter">CLINICAL<span className="text-purple-500">SENTINEL</span></div>
           </motion.header>
         )}
       </AnimatePresence>
@@ -257,27 +276,30 @@ export default function Home() {
                   <Brain className="w-4 h-4" /> The Architecture
                 </h2>
                 <h3 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight leading-[1.1] mb-6">
-                  Built for the <br /> Age of AI.
+                  Catch Clinical Fraud.<br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-rose-400">
+                    Before it Reaches the FDA.
+                  </span>
                 </h3>
                 <p className="text-neutral-400 text-lg md:text-xl font-medium leading-relaxed">
-                  Legacy tools buckle under modern data volume. DataSentinel fuses deterministic logic with Groq-accelerated AI to clean data at the speed of thought.
+                  The world's first multi-modal clinical trial forensic auditor. Detect data fabrication, temporal drift, and behavioral anomalies using mathematically defensible 7-layer AI.
                 </p>
               </div>
               <div className="md:w-2/3 flex flex-col gap-8 md:gap-12 pt-10 md:pt-32 pb-32 relative z-10">
                 <motion.div initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} className="bg-neutral-900/40 border border-white/5 p-8 md:p-12 rounded-[2rem] hover:bg-neutral-900/60 hover:border-purple-500/30 transition-colors group backdrop-blur-sm">
-                  <div className="w-14 h-14 bg-rose-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><ShieldCheck className="w-7 h-7 text-rose-500" /></div>
-                  <h4 className="text-3xl font-bold mb-4 tracking-tight">Zero-Leak PII Vault</h4>
-                  <p className="text-neutral-400 text-lg leading-relaxed">Before a single byte is analyzed, our local edge-scanner identifies and cryptographically vaults personal identities. Your sensitive data never hits the cloud.</p>
+                  <div className="w-14 h-14 bg-rose-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Fingerprint className="w-7 h-7 text-rose-500" /></div>
+                  <h4 className="text-3xl font-bold mb-4 tracking-tight">6-Layer Forensic Detection</h4>
+                  <p className="text-neutral-400 text-lg leading-relaxed">Decomposes anomaly SHAP values into explainable fabrication mechanics, proving biological impossibility across investigative sites.</p>
                 </motion.div>
                 <motion.div initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} className="bg-neutral-900/40 border border-white/5 p-8 md:p-12 rounded-[2rem] hover:bg-neutral-900/60 hover:border-purple-500/30 transition-colors group backdrop-blur-sm">
-                  <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Terminal className="w-7 h-7 text-emerald-500" /></div>
-                  <h4 className="text-3xl font-bold mb-4 tracking-tight">Neuro-Symbolic Logic</h4>
-                  <p className="text-neutral-400 text-lg leading-relaxed">We don&apos;t just guess. DataSentinel combines strict, dynamic mathematical rules with semantic AI evaluation to automatically reject impossible realities in your dataset.</p>
+                  <div className="w-14 h-14 bg-purple-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Activity className="w-7 h-7 text-purple-500" /></div>
+                  <h4 className="text-3xl font-bold mb-4 tracking-tight">Benford's Law Engine</h4>
+                  <p className="text-neutral-400 text-lg leading-relaxed">Mathematically flags subconsciously fabricated numeric distributions, terminal digit entropy, and unnatural round-number clustering.</p>
                 </motion.div>
                 <motion.div initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} className="bg-neutral-900/40 border border-white/5 p-8 md:p-12 rounded-[2rem] hover:bg-neutral-900/60 hover:border-purple-500/30 transition-colors group backdrop-blur-sm">
-                  <div className="w-14 h-14 bg-cyan-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Zap className="w-7 h-7 text-cyan-500" /></div>
-                  <h4 className="text-3xl font-bold mb-4 tracking-tight">Groq LPU Acceleration</h4>
-                  <p className="text-neutral-400 text-lg leading-relaxed">Powered by Llama 3.3 70B running on Groq&apos;s Language Processing Units. Generate complex SQL queries, statistical profiles, and narrative insights in literal milliseconds.</p>
+                  <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Scale className="w-7 h-7 text-emerald-500" /></div>
+                  <h4 className="text-3xl font-bold mb-4 tracking-tight">21 CFR Part 11 Reports</h4>
+                  <p className="text-neutral-400 text-lg leading-relaxed">Automatically generates digitally-signed, FDA-compliant PDF audit reports grounded in ICH E6(R3) guidelines using RegRAG.</p>
                 </motion.div>
               </div>
             </div>
@@ -422,13 +444,19 @@ export default function Home() {
             animate={{ opacity: 1 }}
             className="flex-1 flex flex-col items-center p-6 w-full max-w-6xl mx-auto relative z-10"
           >
-            {/* Dashboard Components remain unchanged */}
             <AnimatePresence mode="wait">
               {currentStep === 'detect' && (
                 <motion.div key="detect" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
                   <div className="mb-6"><h2 className="text-2xl font-semibold mb-1">Anomaly Detection Engine</h2><p className="text-neutral-400">Review flagged shards.</p></div>
                   {sessionId && <Detection key={sessionId} sessionId={sessionId} />}
-                  <div className="mt-8 flex justify-end"><button onClick={() => setCurrentStep('insights')} className="px-6 py-3 bg-white text-black font-medium rounded-xl shadow-lg hover:bg-neutral-200 transition-colors">Proceed &rarr;</button></div>
+                  <div className="mt-8 flex justify-end"><button onClick={() => setCurrentStep('forensic')} className="px-6 py-3 bg-white text-black font-medium rounded-xl shadow-lg hover:bg-neutral-200 transition-colors">Forensic Audit &rarr;</button></div>
+                </motion.div>
+              )}
+              {/* NEW TAB RENDERED HERE */}
+              {currentStep === 'forensic' && (
+                <motion.div key="forensic" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full mt-10">
+                  {sessionId && <FRIDashboard key={sessionId} sessionId={sessionId} columns={columns} />}
+                  <div className="mt-8 flex justify-end"><button onClick={() => setCurrentStep('insights')} className="px-6 py-3 bg-white text-black font-medium rounded-xl hover:bg-neutral-200 transition-colors">Regulatory Report &rarr;</button></div>
                 </motion.div>
               )}
               {currentStep === 'insights' && (

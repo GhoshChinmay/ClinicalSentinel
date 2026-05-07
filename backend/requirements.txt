@@ -1,21 +1,61 @@
+# ── Core API & Data Stack ──────────────────────────────────────────────────────
 fastapi==0.115.12
 uvicorn==0.34.2
 polars==1.27.0
 pandas==2.2.3
 numpy==2.2.5
-scikit-learn==1.6.1
 python-multipart==0.0.20
-duckdb==1.2.2
-requests==2.32.3
-openpyxl==3.1.5
-xlrd==2.0.1
-shap==0.46.0
-slowapi==0.1.9
 python-dotenv==1.1.0
-pytest==8.3.5
-httpx==0.28.1
+slowapi==0.1.9
+
+# ── Machine Learning & Detection ───────────────────────────────────────────────
+scikit-learn==1.6.1
+shap==0.46.0
 pyod==3.2.1
 scipy==1.17.1
-tensorflow==2.21.0
 xgboost==3.2.0
 dice_ml==0.12
+
+# ── Deep Learning (LSTM Autoencoder) ───────────────────────────────────────────
+tensorflow==2.21.0
+
+# ── Database & File Formats ────────────────────────────────────────────────────
+duckdb==1.2.2
+openpyxl==3.1.5
+xlrd==2.0.1
+
+# ── Report Generation ──────────────────────────────────────────────────────────
+fpdf2>=2.7.9
+
+# ── HTTP Client ────────────────────────────────────────────────────────────────
+requests==2.32.3
+httpx==0.28.1
+
+# ── Testing ────────────────────────────────────────────────────────────────────
+pytest==8.3.5
+
+# =============================================================================
+# ClinicalSentinel NEW Intelligence Layer Dependencies (F1–F7)
+# =============================================================================
+
+# ── F4: RegRAG — Regulatory RAG Pipeline ──────────────────────────────────────
+chromadb>=0.5.0
+langchain>=0.3.0
+langchain-groq>=0.2.0
+langchain-community>=0.3.0
+sentence-transformers>=3.0.0   # all-MiniLM-L6-v2 local embedding model
+
+# ── F6: SynthAudit — Synthetic Data Vault ─────────────────────────────────────
+sdv>=1.12.0                    # Gaussian Copula Synthesizer
+
+# ── F5/F7: Temporal Analysis — Changepoint Detection ──────────────────────────
+ruptures>=1.1.9                # Layer 2 temporal burst changepoint detection
+
+# ── F2: GNN Collusion Detector — Graph Neural Networks ────────────────────────
+networkx>=3.3                  # Graph construction and analysis
+# NOTE: Install PyTorch and PyG separately based on your CUDA version:
+# CPU-only:  pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#            pip install torch_geometric
+# CUDA 12.x: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#            pip install torch_geometric
+# Both are optional — GNN Collusion degrades gracefully if not installed.
