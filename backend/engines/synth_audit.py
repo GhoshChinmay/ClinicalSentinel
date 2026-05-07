@@ -69,6 +69,7 @@ def audit_against_synthetic(df: pl.DataFrame, investigator_col: str, metric_cols
             
         # 1. Generate the Ghost Site (Synthetic Reference)
         try:
+            train_data = pandas_df
             if "Threat_Score" in pandas_df.columns:
                 inv_scores = pandas_df.groupby(investigator_col)["Threat_Score"].mean()
                 num_clean = max(1, int(len(inv_scores) * 0.4))
@@ -76,7 +77,6 @@ def audit_against_synthetic(df: pl.DataFrame, investigator_col: str, metric_cols
                 train_data = pandas_df[pandas_df[investigator_col].isin(cleanest_invs)]
                 logger.info(f"Training SynthAudit on cleanest 40% of investigators (N={len(cleanest_invs)}).")
             else:
-                train_data = pandas_df
                 logger.warning("Threat_Score not found. Training SynthAudit on all data.")
                 
             synthetic_reference = generate_synthetic_twin(train_data, target_metrics)
@@ -102,7 +102,9 @@ def audit_against_synthetic(df: pl.DataFrame, investigator_col: str, metric_cols
                     continue
                     
                 # Compare Real vs Synthetic using KS-Test
-                ks_stat, p_value = ks_2samp(real_vals, synth_vals)
+                ks_res = ks_2samp(real_vals, synth_vals)
+                ks_stat = float(ks_res[0])
+                p_value = float(ks_res[1])
                 
                 # If they deviate heavily from the "perfect" distribution
                 if ks_stat > 0.25 and p_value < 0.05:

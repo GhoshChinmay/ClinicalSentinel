@@ -45,6 +45,10 @@ try:
             return torch.sigmoid(x)
 
 except ImportError:
+    torch = None # type: ignore
+    F = None # type: ignore
+    Data = None # type: ignore
+    GCNConv = None # type: ignore
     GNN_AVAILABLE = False
 
 
@@ -92,7 +96,7 @@ def detect_collusion_networks(
             volume = len(subset) / len(pandas_df)  # Normalized entry volume
             features.append([avg_threat, volume])
 
-        x = torch.tensor(features, dtype=torch.float)
+        x = torch.tensor(features, dtype=torch.float) # type: ignore
 
         # 3. Build Edges (Connections based on shared CROs, Hospitals, or Demographics)
         edge_sources: list[int] = []
@@ -117,8 +121,8 @@ def detect_collusion_networks(
             logger.info("No shared structural edges found. Investigators appear isolated.")
             return {"status": "No network structure detected."}
 
-        edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
-        data = Data(x=x, edge_index=edge_index)
+        edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long) # type: ignore
+        data = Data(x=x, edge_index=edge_index) # type: ignore
 
         # 4. Propagate Risk via Heuristic Network Smoothing
         # (Replacing untrained random-weight GNN with a deterministic structural risk algorithm
@@ -136,7 +140,7 @@ def detect_collusion_networks(
                 # Heuristic: Combine own threat with neighbor threat
                 # If neighbors are high risk, it increases own risk.
                 # Normalized by 1.4 to keep within [0, 1] range conceptually.
-                collusion_scores[i] = torch.clamp((base_threat[i] + 0.5 * neighbor_threat) / 1.5, 0.0, 1.0)
+                collusion_scores[i] = torch.clamp((base_threat[i] + 0.5 * neighbor_threat) / 1.5, 0.0, 1.0) # type: ignore
                 
         collusion_scores = collusion_scores.numpy()
 
@@ -145,7 +149,7 @@ def detect_collusion_networks(
         for i, score in enumerate(collusion_scores):
             inv = reverse_mapping[i]
             crcs = round(float(score * 100), 2)
-            connections = int((torch.tensor(edge_sources) == i).sum())
+            connections = int((torch.tensor(edge_sources) == i).sum()) # type: ignore
 
             # Only flag if there is high structural risk AND they have network connections
             if crcs > 60.0 and connections > 0:
